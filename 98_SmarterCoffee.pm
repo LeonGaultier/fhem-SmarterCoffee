@@ -388,7 +388,6 @@ sub SmarterCoffee_Connect($) {
 
     my $isNewConnection = $hash->{STATE} eq "initializing";
 
-    RemoveInternalTimer($hash);
     $hash->{STATE} = "disconnected";
     delete $hash->{INVALID_DEVICE} if defined($hash->{INVALID_DEVICE});
 
@@ -400,11 +399,15 @@ sub SmarterCoffee_Connect($) {
         if (not ($hash->{DeviceName} =~ m/^(.+):([0-9]+)$/)) {
             $hash->{DeviceName} .= ":$SmarterCoffee_Port";
         }
+        
+        RemoveInternalTimer($hash);
 
         DevIo_CloseDev($hash) if DevIo_IsOpen($hash);
         delete $hash->{DevIoJustClosed} if ($hash->{DevIoJustClosed});
         
-        SmarterCoffee_ReConnectTimer($hash);
+        SmarterCoffee_ReConnectTimer($hash)
+        unless( AttrVal($hash->{NAME},'reconnectTimer',0) == 0 );
+        
         return SmarterCoffee_OpenIfRequiredAndWritePending($hash, $isNewConnection);
     }
     return 0;
@@ -510,7 +513,8 @@ sub SmarterCoffee_Initialize($) {
     $hash->{ReadFn} = 'SmarterCoffee_Read';
     $hash->{ReadyFn} = 'SmarterCoffee_OpenIfRequiredAndWritePending';
     $hash->{NotifyFn} = 'SmarterCoffee_Notify';
-
+    
+    $hash->{AttrFn} = 'SmarterCoffee_Attr';
     $hash->{AttrList} = ""
         ."default-hotplate-on-for-minutes "
         ."ignore-max-cups "
@@ -520,6 +524,8 @@ sub SmarterCoffee_Initialize($) {
         ."strength-extra-pre-brew-cups "
         ."strength-extra-pre-brew-delay-seconds "
         ."strength-extra-start-on-device-strength:off,weak,medium,strong "
+        ."devioLoglevel:0,1,2,3,4,5 "
+        ."reconnectTimer:1 "
         .$readingFnAttributes;
 
     Log 5, "Initialized module 'SmarterCoffee'";
@@ -551,7 +557,6 @@ sub SmarterCoffee_Define($$) {
 
     $hash->{NOTIFYDEV} = "global,$name";
     $hash->{STATE} = "initializing";
-    $hash->{devioLoglevel} = 4;
 
     $hash->{".last_command"} =
     $hash->{".last_response"} =
@@ -573,6 +578,26 @@ sub SmarterCoffee_Undefine($$) {
     DevIo_CloseDev($hash);
 
     Log3 $hash->{NAME}, 4, "Instance :: Closed module 'SmarterCoffee': ".Dumper($hash);
+
+    return undef;
+}
+
+sub SmarterCoffee_Attr(@) {
+
+    my ( $cmd, $name, $attrName, $attrVal ) = @_;
+    my $hash                                = $defs{$name};
+
+
+    if( $attrName eq "devioLoglevel" ) {
+        if( $cmd eq "set" ) {
+            $hash->{devioLoglevel}   = $attrVal;
+            Log3 $name, 3, "SmarterCoffee ($name) - set devioLoglevel to $attrVal";
+        
+        } elsif( $cmd eq "del" ) {
+            delete $hash->{devioLoglevel};
+            Log3 $name, 3, "SmarterCoffee ($name) - delete Internal devioLoglevel";
+        }
+    }
 
     return undef;
 }
