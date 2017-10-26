@@ -1116,7 +1116,7 @@ sub SmarterCoffee_UpdateReadings($$;$) {
 
         my $changed = ReadingsVal($hash->{NAME}, $name, "##undefined") ne $value;
         if ($changed or $forceUpdate) {
-            readingsBulkUpdate($hash, $name, $value);
+            readingsBulkUpdateIfChanged($hash, $name, $value);
             $updated = 1 if ($changed);
         }
 
