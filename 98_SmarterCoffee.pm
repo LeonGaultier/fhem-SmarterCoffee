@@ -232,7 +232,8 @@ sub SmarterCoffee_ParseMessage {
                             $updateReading->( "last_command_$key", $value );
                         }
                         $updateReading->( "last_command", $hash->{".last_set_command"} );
-                    }, 1);
+                    }, 1
+                    , 1);
             } else {
                 Log3 $hash->{NAME}, 3, "Connection :: Unknown command response '$message'.";
             }
@@ -386,9 +387,9 @@ sub SmarterCoffee_ParseStatusValues {
 sub SmarterCoffee_Connect($) {
     my ($hash) = @_;
 
-    my $isNewConnection = $hash->{STATE} eq "initializing";
+    my $isNewConnection = ReadingsVal($hash->{NAME},'state','none') eq "initializing";
 
-    $hash->{STATE} = "disconnected";
+    readingsSingleUpdate($hash,'state','disconnected',0);
     delete $hash->{INVALID_DEVICE} if defined($hash->{INVALID_DEVICE});
 
     if ($hash->{AUTO_DETECT}) {
@@ -399,15 +400,10 @@ sub SmarterCoffee_Connect($) {
         if (not ($hash->{DeviceName} =~ m/^(.+):([0-9]+)$/)) {
             $hash->{DeviceName} .= ":$SmarterCoffee_Port";
         }
-        
-        RemoveInternalTimer($hash);
 
         DevIo_CloseDev($hash) if DevIo_IsOpen($hash);
         delete $hash->{DevIoJustClosed} if ($hash->{DevIoJustClosed});
-        
-        InternalTimer(gettimeofday() + 15, "SmarterCoffee_ReConnectTimer", $hash)
-        unless( AttrVal($hash->{NAME},'reconnectTimer',0) == 0 );
-        
+
         return SmarterCoffee_OpenIfRequiredAndWritePending($hash, $isNewConnection);
     }
     return 0;
@@ -423,10 +419,10 @@ sub SmarterCoffee_HandleInitialConnectState($) {
 
     return if ($hash->{".initial-connection-state"});
 
-    if (DevIo_IsOpen($hash) and ($hash->{STATE} eq "disconnected" or $hash->{STATE} eq "opened")) {
+    if (DevIo_IsOpen($hash) and (ReadingsVal($hash->{NAME},'state','none') eq "disconnected" or ReadingsVal($hash->{NAME},'state','none') eq "opened")) {
         $hash->{".initial-connection-state"} = 1;
 
-        $hash->{STATE} = "connected";
+        readingsSingleUpdate($hash,'state','connected',0);
         SmarterCoffee_Get($hash, @{[ $hash->{NAME}, "info" ]}) if (not $hash->{AUTO_DETECT});
         SmarterCoffee_Get($hash, @{[ $hash->{NAME}, "carafe_required_status" ]});
         SmarterCoffee_Get($hash, @{[ $hash->{NAME}, "cups_single_mode_status" ]});
@@ -446,7 +442,7 @@ sub SmarterCoffee_WritePending {
 
         # Processing pending commands
         if (($hash->{INVALID_DEVICE} // "0") eq "1") {
-            $hash->{STATE} = "invalid";
+            readingsSingleUpdate($hash,'state','invalid',0);
         } else {
             if ($pending) {
                 delete $hash->{PENDING_COMMAND} if defined($hash->{PENDING_COMMAND});
@@ -513,8 +509,7 @@ sub SmarterCoffee_Initialize($) {
     $hash->{ReadFn} = 'SmarterCoffee_Read';
     $hash->{ReadyFn} = 'SmarterCoffee_OpenIfRequiredAndWritePending';
     $hash->{NotifyFn} = 'SmarterCoffee_Notify';
-    
-    $hash->{AttrFn} = 'SmarterCoffee_Attr';
+
     $hash->{AttrList} = ""
         ."default-hotplate-on-for-minutes "
         ."ignore-max-cups "
@@ -524,8 +519,6 @@ sub SmarterCoffee_Initialize($) {
         ."strength-extra-pre-brew-cups "
         ."strength-extra-pre-brew-delay-seconds "
         ."strength-extra-start-on-device-strength:off,weak,medium,strong "
-        ."devioLoglevel:0,1,2,3,4,5 "
-        ."reconnectTimer:1 "
         .$readingFnAttributes;
 
     Log 5, "Initialized module 'SmarterCoffee'";
@@ -556,15 +549,13 @@ sub SmarterCoffee_Define($$) {
     }
 
     $hash->{NOTIFYDEV} = "global,$name";
-    $hash->{STATE} = "initializing";
+    readingsSingleUpdate($hash,'state','initializing',0);
 
     $hash->{".last_command"} =
-    $hash->{".last_response"} =
-    $hash->{".last_status"} =
-    $hash->{".raw_last_status"} = "";
+        $hash->{".last_response"} =
+        $hash->{".last_status"} =
+        $hash->{".raw_last_status"} = "";
 
-    RemoveInternalTimer($hash);
-    
     SmarterCoffee_Connect($hash);
 
     Log3 $hash->{NAME}, 4, "Instance :: Defined module 'SmarterCoffee': ".Dumper($hash);
@@ -578,38 +569,6 @@ sub SmarterCoffee_Undefine($$) {
     DevIo_CloseDev($hash);
 
     Log3 $hash->{NAME}, 4, "Instance :: Closed module 'SmarterCoffee': ".Dumper($hash);
-
-    return undef;
-}
-
-sub SmarterCoffee_Attr(@) {
-
-    my ( $cmd, $name, $attrName, $attrVal ) = @_;
-    my $hash                                = $defs{$name};
-
-
-    if( $attrName eq "devioLoglevel" ) {
-        if( $cmd eq "set" ) {
-            $hash->{devioLoglevel}   = $attrVal;
-            Log3 $name, 3, "SmarterCoffee ($name) - set devioLoglevel to $attrVal";
-        
-        } elsif( $cmd eq "del" ) {
-            delete $hash->{devioLoglevel};
-            Log3 $name, 3, "SmarterCoffee ($name) - delete Internal devioLoglevel";
-        }
-    }
-    
-    elsif( $attrName eq "reconnectTimer" ) {
-        if( $cmd eq "set" ) {
-            RemoveInternalTimer($hash,'SmarterCoffee_ReConnectTimer');
-            SmarterCoffee_ReConnectTimer($hash);
-            Log3 $name, 3, "SmarterCoffee ($name) - set Attribute reconnectTimer";
-        
-        } elsif( $cmd eq "del" ) {
-            RemoveInternalTimer($hash,'SmarterCoffee_ReConnectTimer');
-            Log3 $name, 3, "SmarterCoffee ($name) - delete Attribute reconnectTimer";
-        }
-    }
 
     return undef;
 }
@@ -858,7 +817,7 @@ sub SmarterCoffee_Notify($$) {
     }
 }
 
-sub SmarterCoffee_ReadConfiguration($) {
+sub SmarterCoffee_ReadConfiguration($$) {
     my ($hash) = @_;
 
     # Restoring extra strength
@@ -873,7 +832,7 @@ sub SmarterCoffee_LogCommands($$) {
         if ($1 eq "yes") {
             Log3 $hash->{NAME}, 4, "Command :: Success [$command]; Message: $message";
         } else {
-            Log3 $hash->{NAME}, 4, "Command :: Failed [$command]; Cause: $message";
+            Log3 $hash->{NAME}, 3, "Command :: Failed [$command]; Cause: $message";
         }
     }
 }
@@ -1128,11 +1087,11 @@ sub SmarterCoffee_UpdateReadings($$;$) {
 
         my $changed = ReadingsVal($hash->{NAME}, $name, "##undefined") ne $value;
         if ($changed or $forceUpdate) {
-            readingsBulkUpdateIfChanged($hash, $name, $value);
+            readingsBulkUpdate($hash, $name, $value);
             $updated = 1 if ($changed);
         }
 
-        $updated = 1 if ($name eq "state" and $hash->{STATE} ne $value);
+        $updated = 1 if ($name eq "state" and ReadingsVal($name,'state','none') ne $value);
     };
 
     readingsBeginUpdate($hash);
@@ -1329,21 +1288,6 @@ sub SmarterCoffee_GetDevStateIcon {
     $icon =~ s/[\r\n]//g;
 
     return $icon;
-}
-
-sub SmarterCoffee_ReConnectTimer($) {
-
-    my $hash    = shift;
-    
-    
-    if( defined($hash->{FD}) ) {
-        DevIo_Disconnected($hash);
-        DevIo_OpenDev($hash, 1, "SmarterCoffee_WritePending");
-        Log3 $hash->{NAME}, 4, "SmarterCoffee_ReConnectTimer - Socket Reconnected";
-    }
-    
-    InternalTimer(gettimeofday() + 360, "SmarterCoffee_ReConnectTimer", $hash);
-    Log3 $hash->{NAME}, 4, "SmarterCoffee_ReConnectTimer - Call InternalTimer";
 }
 
 ## -------------------------------------------------------------------------------------------------------------------
