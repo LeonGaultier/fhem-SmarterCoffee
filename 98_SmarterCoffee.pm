@@ -405,7 +405,7 @@ sub SmarterCoffee_Connect($) {
         DevIo_CloseDev($hash) if DevIo_IsOpen($hash);
         delete $hash->{DevIoJustClosed} if ($hash->{DevIoJustClosed});
         
-        SmarterCoffee_ReConnectTimer($hash)
+        InternalTimer(gettimeofday() + 15, "SmarterCoffee_ReConnectTimer", $hash)
         unless( AttrVal($hash->{NAME},'reconnectTimer',0) == 0 );
         
         return SmarterCoffee_OpenIfRequiredAndWritePending($hash, $isNewConnection);
@@ -596,6 +596,18 @@ sub SmarterCoffee_Attr(@) {
         } elsif( $cmd eq "del" ) {
             delete $hash->{devioLoglevel};
             Log3 $name, 3, "SmarterCoffee ($name) - delete Internal devioLoglevel";
+        }
+    }
+    
+    elsif( $attrName eq "reconnectTimer" ) {
+        if( $cmd eq "set" ) {
+            RemoveInternalTimer($hash,'SmarterCoffee_ReConnectTimer');
+            SmarterCoffee_ReConnectTimer($hash);
+            Log3 $name, 3, "SmarterCoffee ($name) - set Attribute reconnectTimer";
+        
+        } elsif( $cmd eq "del" ) {
+            RemoveInternalTimer($hash,'SmarterCoffee_ReConnectTimer');
+            Log3 $name, 3, "SmarterCoffee ($name) - delete Attribute reconnectTimer";
         }
     }
 
@@ -1326,11 +1338,11 @@ sub SmarterCoffee_ReConnectTimer($) {
     
     if( defined($hash->{FD}) ) {
         DevIo_Disconnected($hash);
-        DevIo_OpenDev($hash, 1, undef);
+        DevIo_OpenDev($hash, 1, "SmarterCoffee_WritePending");
         Log3 $hash->{NAME}, 4, "SmarterCoffee_ReConnectTimer - Socket Reconnected";
     }
     
-    InternalTimer(gettimeofday() + 480, "SmarterCoffee_ReConnectTimer", $hash);
+    InternalTimer(gettimeofday() + 360, "SmarterCoffee_ReConnectTimer", $hash);
     Log3 $hash->{NAME}, 4, "SmarterCoffee_ReConnectTimer - Call InternalTimer";
 }
 
