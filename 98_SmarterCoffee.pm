@@ -3,7 +3,8 @@
 #  Copyright notice
 #
 #  (c) 2016
-#  Copyright: Juergen Kellerer (juergen at k123 dot eu)
+#  Copyright:           Juergen Kellerer (juergen at k123 dot eu)
+#  FHEM Maintenance:    Marko Oldenburg (leongaultier at gmail dot com)
 #  All rights reserved
 #
 #  This script free software; you can redistribute it and/or modify
@@ -38,10 +39,13 @@
 # - https://github.com/Tristan79/iBrew
 # .. and to all the volonteers crafting the FHEM project.
 #
-# Version: 0.9.1
+# Version: 1.0.0
 #
 #############################################################
-#
+# v1.0.0 - 2018-10-19
+#  - change modul code to package module routine
+#  - change code FHEM conform
+#  - add multiple Attribut to control IoDev modul output
 # v0.9.1 - 2017-04-25
 #  - fixed "stop" detection interferring with "extra" strength.
 #  - added new state "grinding".
@@ -106,20 +110,86 @@ package main;
 use strict;
 use warnings;
 
+my $version = "1.0.0";
+
+sub SmarterCoffee_Initialize($) {
+    my ($hash) = @_;
+
+    $hash->{DefFn}      = 'SmarterCoffee::Define';
+    $hash->{UndefFn}    = 'SmarterCoffee::Undefine';
+    $hash->{GetFn}      = 'SmarterCoffee::Get';
+    $hash->{SetFn}      = 'SmarterCoffee::Set';
+    $hash->{ReadFn}     = 'SmarterCoffee::Read';
+    $hash->{ReadyFn}    = 'SmarterCoffee::OpenIfRequiredAndWritePending';
+    $hash->{NotifyFn}   = 'SmarterCoffee::Notify';
+    $hash->{AttrFn}     = 'SmarterCoffee::Attr';
+
+    $hash->{AttrList} = ""
+        ."default-hotplate-on-for-minutes "
+        ."ignore-max-cups "
+        ."set-on-brews-coffee "
+        ."strength-coffee-weights "
+        ."strength-extra-percent "
+        ."strength-extra-pre-brew-cups "
+        ."strength-extra-pre-brew-delay-seconds "
+        ."strength-extra-start-on-device-strength:off,weak,medium,strong "
+        ."devioLoglevel:0,1,2,3,4,5 "
+        .$readingFnAttributes;
+        
+    foreach my $d ( sort keys %{ $modules{SmarterCoffee}{defptr} } ) {
+        my $hash = $modules{SmarterCoffee}{defptr}{$d};
+        $hash->{VERSION} = $version;
+    }
+}
+
+package SmarterCoffee;
+
+use strict;
+use warnings;
+use POSIX;
+
+use GPUtils qw(:all)
+  ;    # wird für den Import der FHEM Funktionen aus der fhem.pl benötigt
+
 use Data::Dumper;
 use Socket;
 use IO::Select;
 
 use DevIo;
-use HttpUtils;
+#use HttpUtils;
 
-my $SmarterCoffee_Port = 2081;
-my $SmarterCoffee_DiscoveryInterval = 60 * 15;
-my $SmarterCoffee_StrengthExtraDefaultPercent = 1.4;
-my $SmarterCoffee_StrengthDefaultWeights = "3.5 3.9 4.3";
-my %SmarterCoffee_Hotplate = (default => 15, min => 5, max => 40);
+## Import der FHEM Funktionen
+BEGIN {
+    GP_Import(
+        qw(readingsSingleUpdate
+          readingsBulkUpdate
+          readingsBeginUpdate
+          readingsEndUpdate
+          CommandAttr
+          defs
+          modules
+          Log3
+          AttrVal
+          ReadingsVal
+          ReadingsNum
+          Value
+          IsDisabled
+          deviceEvents
+          init_done
+          gettimeofday
+          InternalTimer
+          RemoveInternalTimer
+          DoTrigger)
+    );
+}
 
-my %SmarterCoffee_MessageMaps = (
+my $port = 2081;
+my $discoveryInterval = 60 * 15;
+my $strengthExtraDefaultPercent = 1.4;
+my $strengthDefaultWeights = "3.5 3.9 4.3";
+my %hotplate = (default => 15, min => 5, max => 40);
+
+my %messageMaps = (
     status_bitmasks => [
         # BIT 1 = ???
         # BIT 2 = hotplate
@@ -167,7 +237,7 @@ my %SmarterCoffee_MessageMaps = (
     }
 );
 
-my %SmarterCoffee_Commands = (
+my %commands = (
     reset                   => "107e",
     brew                    => "377e",
     brew_with_settings      => "33########7e",
@@ -185,9 +255,9 @@ my %SmarterCoffee_Commands = (
     history                 => "467e"
 );
 
-my @SmarterCoffee_GetCommands = ("info", "carafe_required_status", "cups_single_mode_status", "get_defaults"); #, "history"
+my @getCommands = ("info", "carafe_required_status", "cups_single_mode_status", "get_defaults"); #, "history"
 
-my %SmarterCoffee_ResponseCodes = (
+my %responseCodes = (
     '00' => { message => 'Ok', success => 'yes' },
     '01' => { message => 'Ok, brewing in progress', success => 'yes' },
 
@@ -200,7 +270,7 @@ my %SmarterCoffee_ResponseCodes = (
 );
 
 
-sub SmarterCoffee_ParseMessage {
+sub ParseMessage {
     my ($hash, $message) = @_;
 
     $message = ($hash->{PARTIAL} // "") if (not defined($message));
@@ -214,7 +284,7 @@ sub SmarterCoffee_ParseMessage {
         if (int(@messages) > 1) {
             my $failed;
             for (@messages) {
-                $failed = 1 if (not SmarterCoffee_ParseMessage($hash, $_."7e"));
+                $failed = 1 if (not ParseMessage($hash, $_."7e"));
             }
             return not $failed;
         }
@@ -224,16 +294,15 @@ sub SmarterCoffee_ParseMessage {
 
         # Parse response of a command.
         if ($message =~ /^03([0-9a-f]{2})7e.*/) {
-            if (my $response = ($SmarterCoffee_ResponseCodes{$1} // 0)) {
-                SmarterCoffee_UpdateReadings($hash,
+            if (my $response = ($responseCodes{$1} // 0)) {
+                UpdateReadings($hash,
                     sub($) {
                         my ($updateReading) = @_;
                         while (my ($key, $value) = each %{$response}) {
                             $updateReading->( "last_command_$key", $value );
                         }
                         $updateReading->( "last_command", $hash->{".last_set_command"} );
-                    }, 1
-                    , 1);
+                    }, 1);
             } else {
                 Log3 $hash->{NAME}, 3, "Connection :: Unknown command response '$message'.";
             }
@@ -243,7 +312,7 @@ sub SmarterCoffee_ParseMessage {
         if ($message =~ /^47([0-9a-f]{2})(.+)7e.*/) {
             my @history = split("7d", $2);
 
-            Log 2, Dumper(@history); #TODO
+            Log3 $hash->{NAME}, 5, Dumper(@history); #TODO
         }
 
         # Parse default settings message.
@@ -255,19 +324,19 @@ sub SmarterCoffee_ParseMessage {
                 hotplate => substr($1, 6, 2),
             );
 
-            SmarterCoffee_ParseStatusValues($hash, \%values);
+            ParseStatusValues($hash, \%values);
             DoTrigger($hash->{NAME}, "get_defaults");
-            SmarterCoffee_Set($hash, @{[ $hash->{NAME}, "defaults" ]});
+            Set($hash, @{[ $hash->{NAME}, "defaults" ]});
         }
 
         # Parse carafe detection status message.
         if ($message =~ /^4d([0-9a-f]{2})7e.*/) {
-            SmarterCoffee_UpdateReading($hash, "carafe_required", ($1 eq "01" ? "no" : "yes"));
+            UpdateReading($hash, "carafe_required", ($1 eq "01" ? "no" : "yes"));
         }
 
         # Parse single cup mode status message.
         if ($message =~ /^50([0-9a-f]{2})7e.*/) {
-            SmarterCoffee_UpdateReading($hash, "cups_single_mode", ($1 eq "00" ? "no" : "yes"));
+            UpdateReading($hash, "cups_single_mode", ($1 eq "00" ? "no" : "yes"));
         }
 
         # Parse info & discovery message.
@@ -287,7 +356,7 @@ sub SmarterCoffee_ParseMessage {
                 cups     => '0'.substr($message, 11, 1),
             );
 
-            SmarterCoffee_ParseStatusValues($hash, \%values);
+            ParseStatusValues($hash, \%values);
         }
 
         $hash->{CONNECTION} = ""
@@ -301,14 +370,14 @@ sub SmarterCoffee_ParseMessage {
     return 0;
 }
 
-sub SmarterCoffee_DumpToExpression($) {
+sub DumpToExpression($) {
     my $d = Dumper($_[0]);
     $d =~ s/\s+/ /g;
     $d =~ s/[^\}]*(\{.+\})[^\}]*/$1/;
     return $d;
 }
 
-sub SmarterCoffee_ParseStatusValues {
+sub ParseStatusValues {
     my ($hash, $values) = @_;
 
     while (my ($mappingKey, $rawValue) = each %{$values}) {
@@ -317,20 +386,20 @@ sub SmarterCoffee_ParseStatusValues {
             my $unpackedStatusBits = sprintf('%08b', ord(pack("H2", $rawValue)));
             $hash->{".last_status"} .= " ($unpackedStatusBits)";
 
-            for (@{$SmarterCoffee_MessageMaps{"status_bitmasks"}}) {
+            for (@{$messageMaps{"status_bitmasks"}}) {
                 my ($unpackedBitmask, $statusInfo) = @{$_};
 
                 my $bitmask = ord(pack("B8", $unpackedBitmask));
                 if (($bitmask & ord(pack("B8", $unpackedStatusBits))) == $bitmask) {
                     while (my ($k, $v) = each(%{$statusInfo})) { $status{$k} = $v }
 
-                    Log3 $hash->{NAME}, 5, "Connection :: Matched all bits of $unpackedBitmask in $unpackedStatusBits. Setting: ".SmarterCoffee_DumpToExpression($statusInfo);
+                    Log3 $hash->{NAME}, 5, "Connection :: Matched all bits of $unpackedBitmask in $unpackedStatusBits. Setting: ".DumpToExpression($statusInfo);
                 }
             }
             $values->{$mappingKey} = { %status };
         } else {
-            if (defined($SmarterCoffee_MessageMaps{$mappingKey}{$rawValue})) {
-                $values->{$mappingKey} = $SmarterCoffee_MessageMaps{$mappingKey}{$rawValue};
+            if (defined($messageMaps{$mappingKey}{$rawValue})) {
+                $values->{$mappingKey} = $messageMaps{$mappingKey}{$rawValue};
             } elsif ($mappingKey eq "hotplate") {
                 $values->{$mappingKey} = { "hotplate_on_for_minutes" => hex($rawValue) };
             } else {
@@ -342,7 +411,7 @@ sub SmarterCoffee_ParseStatusValues {
 
     Log3 $hash->{NAME}, 5, "Connection :: Parsed message: ".Dumper($values);
 
-    SmarterCoffee_UpdateReadings($hash,
+    UpdateReadings($hash,
         sub($) {
             my ($updateReading) = @_;
             my $state = 0;
@@ -384,7 +453,7 @@ sub SmarterCoffee_ParseStatusValues {
     );
 }
 
-sub SmarterCoffee_Connect($) {
+sub Connect($) {
     my ($hash) = @_;
 
     my $isNewConnection = ReadingsVal($hash->{NAME},'state','none') eq "initializing";
@@ -393,52 +462,52 @@ sub SmarterCoffee_Connect($) {
     delete $hash->{INVALID_DEVICE} if defined($hash->{INVALID_DEVICE});
 
     if ($hash->{AUTO_DETECT}) {
-        SmarterCoffee_RunDiscoveryProcess($hash, 1);
+        RunDiscoveryProcess($hash, 1);
     }
 
     if (defined($hash->{DeviceName})) {
         if (not ($hash->{DeviceName} =~ m/^(.+):([0-9]+)$/)) {
-            $hash->{DeviceName} .= ":$SmarterCoffee_Port";
+            $hash->{DeviceName} .= ":$port";
         }
 
-        DevIo_CloseDev($hash) if DevIo_IsOpen($hash);
+        main::main::DevIo_CloseDev($hash) if main::DevIo_IsOpen($hash);
         delete $hash->{DevIoJustClosed} if ($hash->{DevIoJustClosed});
 
-        return SmarterCoffee_OpenIfRequiredAndWritePending($hash, $isNewConnection);
+        return OpenIfRequiredAndWritePending($hash, $isNewConnection);
     }
     return 0;
 }
 
-sub SmarterCoffee_OpenIfRequiredAndWritePending($;$) {
+sub OpenIfRequiredAndWritePending($;$) {
     my ($hash, $initial) = @_;
-    return DevIo_OpenDev($hash, ($initial ? 0 : 1), "SmarterCoffee_WritePending");
+    return main::DevIo_OpenDev($hash, ($initial ? 0 : 1), "SmarterCoffee::WritePending");
 }
 
-sub SmarterCoffee_HandleInitialConnectState($) {
+sub HandleInitialConnectState($) {
     my ($hash) = @_;
 
     return if ($hash->{".initial-connection-state"});
 
-    if (DevIo_IsOpen($hash) and (ReadingsVal($hash->{NAME},'state','none') eq "disconnected" or ReadingsVal($hash->{NAME},'state','none') eq "opened")) {
+    if (main::DevIo_IsOpen($hash) and (ReadingsVal($hash->{NAME},'state','none') eq "disconnected" or ReadingsVal($hash->{NAME},'state','none') eq "opened")) {
         $hash->{".initial-connection-state"} = 1;
 
         readingsSingleUpdate($hash,'state','connected',0);
-        SmarterCoffee_Get($hash, @{[ $hash->{NAME}, "info" ]}) if (not $hash->{AUTO_DETECT});
-        SmarterCoffee_Get($hash, @{[ $hash->{NAME}, "carafe_required_status" ]});
-        SmarterCoffee_Get($hash, @{[ $hash->{NAME}, "cups_single_mode_status" ]});
+        Get($hash, @{[ $hash->{NAME}, "info" ]}) if (not $hash->{AUTO_DETECT});
+        Get($hash, @{[ $hash->{NAME}, "carafe_required_status" ]});
+        Get($hash, @{[ $hash->{NAME}, "cups_single_mode_status" ]});
 
         delete $hash->{".initial-connection-state"};
     }
 }
 
-sub SmarterCoffee_WritePending {
+sub WritePending {
     my ($hash, $mustSucceed) = @_;
 
-    if (DevIo_IsOpen($hash)) {
+    if (main::DevIo_IsOpen($hash)) {
         my $pending = ($hash->{PENDING_COMMAND} // 0);
 
         # Handling initial call on a fresh connection
-        SmarterCoffee_HandleInitialConnectState($hash);
+        HandleInitialConnectState($hash);
 
         # Processing pending commands
         if (($hash->{INVALID_DEVICE} // "0") eq "1") {
@@ -448,14 +517,14 @@ sub SmarterCoffee_WritePending {
                 delete $hash->{PENDING_COMMAND} if defined($hash->{PENDING_COMMAND});
 
                 Log3 $hash->{NAME}, 4, "Connection :: Sending to ".$hash->{DeviceName}.": $pending";
-                DevIo_SimpleWrite($hash, $pending, 1);
+                main::DevIo_SimpleWrite($hash, $pending, 1);
                 $hash->{".raw_last_status"} = "";
 
-                my $result = DevIo_SimpleReadWithTimeout($hash, 5);
+                my $result = main::DevIo_SimpleReadWithTimeout($hash, 5);
                 if ($result) {
-                    $result = SmarterCoffee_Read($hash, $result);
+                    $result = Read($hash, $result);
                 } else {
-                    DevIo_Disconnected($hash);
+                    main::DevIo_Disconnected($hash);
                 }
 
                 $hash->{INVALID_DEVICE} = "1" if ($mustSucceed and not $result);
@@ -467,11 +536,11 @@ sub SmarterCoffee_WritePending {
     return undef;
 }
 
-sub SmarterCoffee_Read($;$) {
+sub Read($;$) {
     my ($hash, $buffer) = @_;
 
     # Handle case that fhem reconnected a broken connection and state is "opened".
-    SmarterCoffee_HandleInitialConnectState($hash) if (not defined($buffer));
+    HandleInitialConnectState($hash) if (not defined($buffer));
 
     # Abort read if we already detected that the device is invalid.
     return 0 if ($hash->{INVALID_DEVICE} // 0);
@@ -480,7 +549,7 @@ sub SmarterCoffee_Read($;$) {
     $hash->{PARTIAL} = "" if (not defined($hash->{PARTIAL}) or defined($buffer) or length($hash->{PARTIAL} // "") >= 512);
 
     # Reading available bytes from the socket (if not specified from external).
-    $buffer = DevIo_SimpleRead($hash) if (not defined($buffer));
+    $buffer = main::DevIo_SimpleRead($hash) if (not defined($buffer));
     return 0 if (not defined($buffer));
 
     # Appending message bytes as hex string.
@@ -488,7 +557,7 @@ sub SmarterCoffee_Read($;$) {
 
     # Parsing the message and populate readings.
     if ($hash->{PARTIAL} ne "") {
-        if (SmarterCoffee_ParseMessage($hash)) {
+        if (ParseMessage($hash)) {
             delete $hash->{PARTIAL};
         } else {
             Log3 $hash->{NAME}, 2, "Connection :: Failed parsing buffer content: ".$hash->{PARTIAL};
@@ -499,48 +568,24 @@ sub SmarterCoffee_Read($;$) {
     return 1;
 }
 
-sub SmarterCoffee_Initialize($) {
-    my ($hash) = @_;
-
-    $hash->{DefFn} = 'SmarterCoffee_Define';
-    $hash->{UndefFn} = 'SmarterCoffee_Undefine';
-    $hash->{GetFn} = 'SmarterCoffee_Get';
-    $hash->{SetFn} = 'SmarterCoffee_Set';
-    $hash->{ReadFn} = 'SmarterCoffee_Read';
-    $hash->{ReadyFn} = 'SmarterCoffee_OpenIfRequiredAndWritePending';
-    $hash->{NotifyFn} = 'SmarterCoffee_Notify';
-
-    $hash->{AttrList} = ""
-        ."default-hotplate-on-for-minutes "
-        ."ignore-max-cups "
-        ."set-on-brews-coffee "
-        ."strength-coffee-weights "
-        ."strength-extra-percent "
-        ."strength-extra-pre-brew-cups "
-        ."strength-extra-pre-brew-delay-seconds "
-        ."strength-extra-start-on-device-strength:off,weak,medium,strong "
-        .$readingFnAttributes;
-
-    Log 5, "Initialized module 'SmarterCoffee'";
-}
-
-sub SmarterCoffee_Define($$) {
+sub Define($$) {
     my ($hash, $def) = @_;
     my @param = split('[ \t]+', $def);
     my $name = $hash->{NAME};
 
     # set default settings on first define
     if ($init_done) {
-        $attr{$name}{alias} = "Coffee Machine";
-        $attr{$name}{webCmd} = "strength:cups:start:hotplate:off";
-        $attr{$name}{'strength-extra-percent'} = $SmarterCoffee_StrengthExtraDefaultPercent;
-        $attr{$name}{'default-hotplate-on-for-minutes'} = "15 5=20 8=30 10=35";
-        $attr{$name}{'event-on-change-reading'} = ".*";
-        $attr{$name}{'event-on-update-reading'} = "last_command.*";
+        CommandAttr(undef,$name . ' alias Coffee Machine') if ( AttrVal($name,'alias','none') eq 'none' );
+        CommandAttr(undef,$name . ' webCmd strength:cups:start:hotplate:off') if ( AttrVal($name,'webCmd','none') eq 'none' );
+        CommandAttr(undef,$name . ' strength-extra-percent ' . $strengthExtraDefaultPercent) if ( AttrVal($name,'strength-extra-percent','none') eq 'none' );
+        CommandAttr(undef,$name . ' default-hotplate-on-for-minutes 15 5=20 8=30 10=35') if ( AttrVal($name,'default-hotplate-on-for-minutes','none') eq 'none' );
+        CommandAttr(undef,$name . ' event-on-change-reading .*') if ( AttrVal($name,'event-on-change-reading','none') eq 'none' );
+        CommandAttr(undef,$name . ' event-on-update-reading last_command.*') if ( AttrVal($name,'event-on-update-reading','none') eq 'none' );
     }
 
-    $attr{$name}{devStateIcon} = '{ SmarterCoffee_GetDevStateIcon($name) }' if not defined($attr{$name}{devStateIcon});
+    CommandAttr(undef,$name . 'devStateIcon { SmarterCoffee::GetDevStateIcon($name) }') if ( AttrVal($name,'devStateIcon','none') eq 'none' or AttrVal($name,'devStateIcon','none') eq '{ SmarterCoffee_GetDevStateIcon($name) }' );
 
+    $hash->{VERSION} = $version;
     if (int(@param) < 3) {
         $hash->{AUTO_DETECT} = 1;
     } else {
@@ -552,38 +597,62 @@ sub SmarterCoffee_Define($$) {
     readingsSingleUpdate($hash,'state','initializing',0);
 
     $hash->{".last_command"} =
-        $hash->{".last_response"} =
-        $hash->{".last_status"} =
-        $hash->{".raw_last_status"} = "";
+    $hash->{".last_response"} =
+    $hash->{".last_status"} =
+    $hash->{".raw_last_status"} = "";
 
-    SmarterCoffee_Connect($hash);
+    Connect($hash);
+    
+    $modules{SmarterCoffee}{defptr}{CoolTux} = $hash;
 
     Log3 $hash->{NAME}, 4, "Instance :: Defined module 'SmarterCoffee': ".Dumper($hash);
 }
 
 
-sub SmarterCoffee_Undefine($$) {
+sub Undefine($$) {
     my ($hash, $arg) = @_;
 
     RemoveInternalTimer($hash);
-    DevIo_CloseDev($hash);
+    main::DevIo_CloseDev($hash);
 
     Log3 $hash->{NAME}, 4, "Instance :: Closed module 'SmarterCoffee': ".Dumper($hash);
+    
+    delete( $modules{SmarterCoffee}{defptr}{CoolTux} );
 
     return undef;
 }
 
-sub SmarterCoffee_Get {
+sub Attr(@) {
+
+    my ( $cmd, $name, $attrName, $attrVal ) = @_;
+    my $hash                                = $defs{$name};
+
+
+    if( $attrName eq "devioLoglevel" ) {
+        if( $cmd eq "set" ) {
+            $hash->{devioLoglevel}   = $attrVal;
+            Log3 $name, 3, "SmarterCoffee ($name) - set devioLoglevel to $attrVal";
+        
+        } elsif( $cmd eq "del" ) {
+            delete $hash->{devioLoglevel};
+            Log3 $name, 3, "SmarterCoffee ($name) - delete Internal devioLoglevel";
+        }
+    }
+
+    return undef;
+}
+
+sub Get {
     my ($hash, @param) = @_;
 
-    if (grep {$_ eq ($param[1] // "")} @SmarterCoffee_GetCommands) {
-        return SmarterCoffee_Set($hash, @param) // "Ok :: ".$hash->{".last_response"};
+    if (grep {$_ eq ($param[1] // "")} @getCommands) {
+        return Set($hash, @param) // "Ok :: ".$hash->{".last_response"};
     } else {
-        return "Unknown argument $param[1], choose one of ".join(":noArg ", @SmarterCoffee_GetCommands).":noArg";
+        return "Unknown argument $param[1], choose one of ".join(":noArg ", @getCommands).":noArg";
     }
 }
 
-sub SmarterCoffee_Set {
+sub Set {
     my ($hash, @param) = @_;
 
     my $desiredCups = defined($hash->{".extra_strength.original_desired_cups"})
@@ -599,7 +668,7 @@ sub SmarterCoffee_Set {
         # Special treatment for hotplate, syntax: "set hotplate (on|off) [5-40]"
         if ($option =~ /^hotplate.*/) {
             # Select default time from "[minutes] [cups=minutes]", e.g.: "15 5=20 10=35" means: 15 default, 20 from 5 cups and 35 from 10 cups.
-            my ($defaultOnForMinutes, $overrides) = parseParams(AttrVal($hash->{NAME}, "default-hotplate-on-for-minutes", $SmarterCoffee_Hotplate{default}));
+            my ($defaultOnForMinutes, $overrides) = parseParams(AttrVal($hash->{NAME}, "default-hotplate-on-for-minutes", $hotplate{default}));
             $defaultOnForMinutes = $defaultOnForMinutes->[0] if (defined($defaultOnForMinutes) and int($defaultOnForMinutes) > 0);
             for my $key (sort { $a <=> $b } (keys %{$overrides})) {
                 $defaultOnForMinutes = $overrides->{$key} if (int($desiredCups) >= int($key));
@@ -607,17 +676,17 @@ sub SmarterCoffee_Set {
 
             $value = $optionValue if (not defined($value));
             $value = $value =~ /^[0-9]+$/ ? int($value) : int($defaultOnForMinutes);
-            $value = $SmarterCoffee_Hotplate{max} if ($value > $SmarterCoffee_Hotplate{max});
-            $value = $SmarterCoffee_Hotplate{min} if ($value < $SmarterCoffee_Hotplate{min});
+            $value = $hotplate{max} if ($value > $hotplate{max});
+            $value = $hotplate{min} if ($value < $hotplate{min});
 
-            SmarterCoffee_UpdateReading($hash, "hotplate_on_for_minutes", ($option eq "hotplate_off" ? 0 : $value));
+            UpdateReading($hash, "hotplate_on_for_minutes", ($option eq "hotplate_off" ? 0 : $value));
 
             return unpack('H*', pack('C', $value));
 
-        } elsif (defined($SmarterCoffee_MessageMaps{$option}) and defined($optionValue)) {
+        } elsif (defined($messageMaps{$option}) and defined($optionValue)) {
             # Ordinary values are looked up in the message maps (looking up the HEX code that backs a setting).
-            for my $key (keys %{$SmarterCoffee_MessageMaps{$option}}) {
-                my $v = $SmarterCoffee_MessageMaps{$option}{$key};
+            for my $key (keys %{$messageMaps{$option}}) {
+                my $v = $messageMaps{$option}{$key};
                 if ((ref($v) eq "HASH" ? grep(/^$optionValue$/, values %{$v}) : $v eq $optionValue)) {
                     return $key;
                 }
@@ -651,13 +720,13 @@ sub SmarterCoffee_Set {
             # Enable grinder in extra mode if required and option is not defaults.
             my $grinderEnabled = (($param[3] // ReadingsVal($hash->{NAME}, "grinder", "")) eq "enabled");
             if ($option ne "defaults" and not $grinderEnabled and ($param[3] // "") ne "disabled") {
-                SmarterCoffee_Set($hash, @{[ $hash->{NAME}, "grinder", "enabled" ]});
+                Set($hash, @{[ $hash->{NAME}, "grinder", "enabled" ]});
                 $grinderEnabled = 1;
                 $param[3] = "enabled" if defined($param[3]);
             }
 
             if ($option ne "defaults" and $grinderEnabled) {
-                if (SmarterCoffee_TranslateParamsForExtraStrength($hash, \@param, "grind")) {
+                if (TranslateParamsForExtraStrength($hash, \@param, "grind")) {
                     my ($cups, $error) = ($hash->{".extra_strength.desired_cups"}, $hash->{".extra_strength.error_rate"});
                     Log3 $hash->{NAME}, 3, "Extra Strength :: Grinding [".join(" ", @param)."] to get $cups cups (error rate: $error%).";
                 } else {
@@ -701,7 +770,7 @@ sub SmarterCoffee_Set {
                     $option = "brew_with_settings";
                     $messagePart = $input{cups}.$input{strength}.$input{hotplate}.$input{grinder};
 
-                    SmarterCoffee_UpdateReadings($hash,
+                    UpdateReadings($hash,
                         sub($) {
                             my ($updateReading) = @_;
                             for my $key (keys %readingsValues) { $updateReading->( $key, $readingsValues{$key} ) }
@@ -727,7 +796,7 @@ sub SmarterCoffee_Set {
             delete $hash->{".extra_strength.enabled"} if ($option eq "strength" and $param[0] ne "extra" and $hash->{".extra_strength.enabled"});
 
             # Eager updating strength, cups and grinder reading to avoid that widget updates are slower than starting a "brew".
-            SmarterCoffee_UpdateReading($hash, $option, $param[0]) if ($option =~ /^(strength|cups|grinder)$/);
+            UpdateReading($hash, $option, $param[0]) if ($option =~ /^(strength|cups|grinder)$/);
 
             # Aborting device update when strength is "extra".
             return undef if ($option eq "strength" and $param[0] eq "extra");
@@ -738,15 +807,15 @@ sub SmarterCoffee_Set {
 
         # Resetting internal states before executing "stop".
         if ($option eq "stop" and ($param[0] // "") ne "no-reset") {
-            SmarterCoffee_ResetState($hash);
+            ResetState($hash);
         }
 
         $messagePart = $optionToMessage->( $option, $param[0] );
     }
 
     # Command execution
-    if (defined($SmarterCoffee_Commands{$option})) {
-        my $message = $SmarterCoffee_Commands{$option};
+    if (defined($commands{$option})) {
+        my $message = $commands{$option};
 
         # Replacing placeholders with value.
         $message =~ s/#+/$messagePart/ if (defined($messagePart) and $messagePart =~ /^[a-f0-9]{2,}$/);
@@ -758,14 +827,14 @@ sub SmarterCoffee_Set {
             $hash->{"PENDING_COMMAND"} = $hash->{".last_command"} = $message;
             Log3 $hash->{NAME}, 4, "Connection :: Sending message: $message [".$hash->{".last_set_command"}."]";
 
-            SmarterCoffee_WritePending($hash, ($option eq "info"));
+            WritePending($hash, ($option eq "info"));
         }
         return undef;
 
     } elsif ($option eq "disconnect" or $option eq "reconnect") {
         # This option is primarily to test if reconnect works.
-        DevIo_Disconnected($hash);
-        SmarterCoffee_Connect($hash) if ($option eq "reconnect");
+        main::DevIo_Disconnected($hash);
+        Connect($hash) if ($option eq "reconnect");
         return undef;
 
     } elsif ($option ne "?" and $option ne "help") {
@@ -773,7 +842,7 @@ sub SmarterCoffee_Set {
     }
 
     my @strength = split(",", "weak,medium,strong,extra");
-    pop(@strength) if (not SmarterCoffee_IsExtraStrengthModeAvailable($hash));
+    pop(@strength) if (not IsExtraStrengthModeAvailable($hash));
 
     return "Unknown argument $option, choose one of"
         ." brew"
@@ -787,14 +856,14 @@ sub SmarterCoffee_Set {
         ." hotplate_on_for_minutes:slider,5,5,40";
 }
 
-sub SmarterCoffee_ResetState($) {
+sub ResetState($) {
     my ($hash) = @_;
 
-    SmarterCoffee_ResetBrewState($hash);
-    SmarterCoffee_ResetExtraStrengthMode($hash);
+    ResetBrewState($hash);
+    ResetExtraStrengthMode($hash);
 }
 
-sub SmarterCoffee_Notify($$) {
+sub Notify($$) {
     my ($hash, $eventHash) = @_;
     my $name = $hash->{NAME};
     my $senderName = $eventHash->{NAME};
@@ -804,27 +873,27 @@ sub SmarterCoffee_Notify($$) {
 
     if (my $events = deviceEvents($eventHash, 1)) {
         if ($senderName eq "global") {
-            SmarterCoffee_ReadConfiguration($hash) if (grep(m/^(INITIALIZED|REREADCFG)$/, @{$events}));
+            ReadConfiguration($hash) if (grep(m/^(INITIALIZED|REREADCFG)$/, @{$events}));
         } else {
             for (@{$events}) {
                 if ($_) {
-                    SmarterCoffee_ProcessBrewStateEvents($hash, $_);
-                    SmarterCoffee_ProcessEventForExtraStrength($hash, $_);
-                    SmarterCoffee_LogCommands($hash, $_);
+                    ProcessBrewStateEvents($hash, $_);
+                    ProcessEventForExtraStrength($hash, $_);
+                    LogCommands($hash, $_);
                 }
             }
         }
     }
 }
 
-sub SmarterCoffee_ReadConfiguration($$) {
+sub ReadConfiguration($) {
     my ($hash) = @_;
 
     # Restoring extra strength
     $hash->{".extra_strength.enabled"} = 1 if (ReadingsVal($hash->{NAME}, "strength", "") =~ /^extra.*/);
 }
 
-sub SmarterCoffee_LogCommands($$) {
+sub LogCommands($$) {
     my ($hash, $event) = @_;
 
     if ($event =~ /^last_command_success:\s*(yes|no)\s*$/i and (my $command = ReadingsVal($hash->{NAME}, "last_command", 0))) {
@@ -837,7 +906,7 @@ sub SmarterCoffee_LogCommands($$) {
     }
 }
 
-sub SmarterCoffee_ProcessBrewStateEvents($$) {
+sub ProcessBrewStateEvents($$) {
     my ($hash, $event) = @_;
 
     # Setting "INITIATED_BREWING" when brewing was initiated by a command (and not by using the machine's buttons)
@@ -849,26 +918,26 @@ sub SmarterCoffee_ProcessBrewStateEvents($$) {
         $hash->{".brew-state"} = $1;
 
     } elsif ($event =~ /^state:\s*done/) {
-        SmarterCoffee_ResetBrewState($hash);
+        ResetBrewState($hash);
 
     } elsif ($event =~ /^state:\s*(.+)$/ and ($hash->{".brew-state"} // "") =~ /^(brewing|grinding)$/) {
         Log3 $hash->{NAME}, 3, "Found state change from 'brewing' to '$1'. This looks like an abort, resetting all states to initial.";
-        SmarterCoffee_ResetState($hash);
+        ResetState($hash);
     }
 }
 
-sub SmarterCoffee_ResetBrewState($) {
+sub ResetBrewState($) {
     my ($hash) = @_;
     delete $hash->{".brew-state"} if defined($hash->{".brew-state"});
     delete $hash->{"INITIATED_BREWING"} if defined($hash->{"INITIATED_BREWING"});
 }
 
-sub SmarterCoffee_ProcessEventForExtraStrength($$) {
+sub ProcessEventForExtraStrength($$) {
     my ($hash, $event) = @_;
 
     if ($event =~ /^strength:\s*extra\s*$/) {
         # Listen to "set strength extra" and enable it if available.
-        if (not (SmarterCoffee_EnableExtraStrengthMode($hash))) {
+        if (not (EnableExtraStrengthMode($hash))) {
             Log3 $hash->{NAME}, 3, "Extra-Strength :: Downgrading strength 'extra' to 'strong'";
             fhem("sleep 0.1 fix-strength ; set ".$hash->{NAME}." strength strong");
         }
@@ -878,11 +947,11 @@ sub SmarterCoffee_ProcessEventForExtraStrength($$) {
         if (ReadingsVal($hash->{NAME}, "grinder", "-") eq "disabled"
             and (my $cups = int(ReadingsVal($hash->{NAME}, "cups", 0))) > 0
             and (my $strength = ReadingsVal($hash->{NAME}, "strength", "")) eq AttrVal($hash->{NAME}, "strength-extra-start-on-device-strength", "off")
-            and SmarterCoffee_EnableExtraStrengthMode($hash) ) {
+            and EnableExtraStrengthMode($hash) ) {
 
             Log3 $hash->{NAME}, 3, "Extra-Strength :: Upgrading brewing $cups cups started with disabled grinder and strength '$strength' to strength 'extra'.";
-            SmarterCoffee_Set($hash, @{[ $hash->{NAME}, "stop" ]});
-            SmarterCoffee_Set($hash, @{[ $hash->{NAME}, "brew", $cups, "extra" ]});
+            Set($hash, @{[ $hash->{NAME}, "stop" ]});
+            Set($hash, @{[ $hash->{NAME}, "brew", $cups, "extra" ]});
         }
 
     } elsif (($hash->{".extra_strength.enabled"} or $hash->{".extra_strength.phase-2"})) {
@@ -893,22 +962,22 @@ sub SmarterCoffee_ProcessEventForExtraStrength($$) {
         } elsif ($event =~ /^state:\s*done/) {
             # Finishing first round (grinding & first brew are done here)
             if ((my $delay = int($hash->{".extra_strength.pre_brew_phase_delay"} // 0)) > 0) {
-                InternalTimer(gettimeofday() + $delay, "SmarterCoffee_ExtraStrengthHandleBrewing", $hash, 0);
+                InternalTimer(gettimeofday() + $delay, "SmarterCoffee::ExtraStrengthHandleBrewing", $hash, 0);
             } else {
                 if (int($hash->{".extra_strength.original_desired_cups"} // 0) > 0) {
-                    SmarterCoffee_Set($hash, @{[ $hash->{NAME}, "cups", $hash->{".extra_strength.original_desired_cups"} ]});
+                    Set($hash, @{[ $hash->{NAME}, "cups", $hash->{".extra_strength.original_desired_cups"} ]});
                 }
-                SmarterCoffee_ResetExtraStrengthMode($hash);
+                ResetExtraStrengthMode($hash);
             }
 
         } elsif ($event =~ /^state:\s*brewing/ and not $hash->{".extra_strength.phase-2"}) {
             # Entering phase-2: Brewing after initial grinding at different settings.
-            $hash->{".extra_strength.phase-2"} = SmarterCoffee_ExtraStrengthHandleBrewing($hash);
+            $hash->{".extra_strength.phase-2"} = ExtraStrengthHandleBrewing($hash);
         }
     }
 }
 
-sub SmarterCoffee_ExtraStrengthHandleBrewing($) {
+sub ExtraStrengthHandleBrewing($) {
     my ($hash) = @_;
     my @params = (
         ReadingsVal($hash->{NAME}, "cups", "-"),
@@ -917,12 +986,12 @@ sub SmarterCoffee_ExtraStrengthHandleBrewing($) {
         "disabled"
     );
 
-    if (SmarterCoffee_TranslateParamsForExtraStrength($hash, \@params, "brew")) {
+    if (TranslateParamsForExtraStrength($hash, \@params, "brew")) {
         # Resetting brew state to ensure it doesn't interfere with stop command that runs with "no-reset" option.
-        SmarterCoffee_ResetBrewState($hash);
+        ResetBrewState($hash);
 
         # Stopping brewing after initial grinding (skip stop if we are in phase-2 and came here due to pre-brew delay)
-        SmarterCoffee_Set($hash, @{[ $hash->{NAME}, "stop", "no-reset" ]}) if not $hash->{".extra_strength.phase-2"};
+        Set($hash, @{[ $hash->{NAME}, "stop", "no-reset" ]}) if not $hash->{".extra_strength.phase-2"};
 
         unshift(@params, "brew");
         unshift(@params, $hash->{NAME});
@@ -932,17 +1001,17 @@ sub SmarterCoffee_ExtraStrengthHandleBrewing($) {
             : "2";
         Log3 $hash->{NAME}, 4, "Extra-Strength :: Phase $phase [set ".join(" ", @params)."]";
 
-        SmarterCoffee_Set($hash, @params);
+        Set($hash, @params);
         return 1;
     }
 
     return 0;
 }
 
-sub SmarterCoffee_IsExtraStrengthModeAvailable($;$) {
+sub IsExtraStrengthModeAvailable($;$) {
     my ($hash, $slient) = @_;
 
-    my $extraPercent = AttrVal($hash->{NAME}, "strength-extra-percent", $SmarterCoffee_StrengthExtraDefaultPercent);
+    my $extraPercent = AttrVal($hash->{NAME}, "strength-extra-percent", $strengthExtraDefaultPercent);
     my $preBrew = int(AttrVal($hash->{NAME}, "strength-extra-pre-brew-cups", 1)) * int(AttrVal($hash->{NAME}, "strength-extra-pre-brew-delay-seconds", 0));
 
     if ($extraPercent > 0 and ($extraPercent != 1 or $preBrew > 0) and $extraPercent < 2.5) {
@@ -954,12 +1023,12 @@ sub SmarterCoffee_IsExtraStrengthModeAvailable($;$) {
     }
 }
 
-sub SmarterCoffee_EnableExtraStrengthMode($) {
+sub EnableExtraStrengthMode($) {
     my ($hash) = @_;
 
     return 1 if ($hash->{".extra_strength.enabled"});
 
-    if (SmarterCoffee_IsExtraStrengthModeAvailable($hash, 0)) {
+    if (IsExtraStrengthModeAvailable($hash, 0)) {
         Log3 $hash->{NAME}, 4, "Extra-Strength :: Entering extra strength mode.";
         $hash->{".extra_strength.enabled"} = 1;
         return 1;
@@ -968,7 +1037,7 @@ sub SmarterCoffee_EnableExtraStrengthMode($) {
     }
 }
 
-sub SmarterCoffee_ResetExtraStrengthMode($;$) {
+sub ResetExtraStrengthMode($;$) {
     my ($hash, $partial) = @_;
 
     Log3 $hash->{NAME}, 4, ("Extra-Strength :: Resetting state to initial (partial: " . ($partial // 0) . ").");
@@ -986,16 +1055,16 @@ sub SmarterCoffee_ResetExtraStrengthMode($;$) {
     }
 }
 
-sub SmarterCoffee_TranslateParamsForExtraStrength($$$) {
+sub TranslateParamsForExtraStrength($$$) {
     my ($hash, $params, $phase) = @_;
 
-    return 0 if (not (SmarterCoffee_EnableExtraStrengthMode($hash)));
+    return 0 if (not (EnableExtraStrengthMode($hash)));
 
     if ($phase eq "grind") {
-        my $extraPercent = AttrVal($hash->{NAME}, "strength-extra-percent", $SmarterCoffee_StrengthExtraDefaultPercent);
+        my $extraPercent = AttrVal($hash->{NAME}, "strength-extra-percent", $strengthExtraDefaultPercent);
 
         my @strengths = ("weak", "medium", "strong");
-        my @weights = split(/\s+/, AttrVal($hash->{NAME}, "strength-coffee-weights", $SmarterCoffee_StrengthDefaultWeights));
+        my @weights = split(/\s+/, AttrVal($hash->{NAME}, "strength-coffee-weights", $strengthDefaultWeights));
         while (int(@weights) < 3) { push(@weights, (int(@weights) ? $weights[int(@weights) - 1] : 4.3)) }
 
         Log3 $hash->{NAME}, 4, "Extra-Strength :: Reference weights: ".join(" ", @weights)." (".join(" ", @strengths).")";
@@ -1059,7 +1128,7 @@ sub SmarterCoffee_TranslateParamsForExtraStrength($$$) {
             $params->[0] = $preBrewCups;
         } else {
             $params->[0] = $hash->{".extra_strength.desired_cups"};
-            SmarterCoffee_ResetExtraStrengthMode($hash, 1);
+            ResetExtraStrengthMode($hash, 1);
         }
 
         return 1;
@@ -1068,12 +1137,12 @@ sub SmarterCoffee_TranslateParamsForExtraStrength($$$) {
     return 0;
 }
 
-sub SmarterCoffee_UpdateReading($$$) {
+sub UpdateReading($$$) {
     my ($hash, $name, $value) = @_;
-    SmarterCoffee_UpdateReadings($hash, sub($) { ($_[0])->( $name, $value ) });
+    UpdateReadings($hash, sub($) { ($_[0])->( $name, $value ) });
 }
 
-sub SmarterCoffee_UpdateReadings($$;$) {
+sub UpdateReadings($$;$) {
     my ($hash, $callback, $forceUpdate) = @_;
 
     $forceUpdate = (($forceUpdate // 0)
@@ -1099,29 +1168,29 @@ sub SmarterCoffee_UpdateReadings($$;$) {
     readingsEndUpdate($hash, ($updated or $forceUpdate));
 }
 
-sub SmarterCoffee_RunDiscoveryProcess($;$) {
+sub RunDiscoveryProcess($;$) {
     my ($hash, $skipConnect) = @_;
 
-    if (SmarterCoffee_Discover($hash) and not $skipConnect) {
-        SmarterCoffee_Connect($hash);
+    if (Discover($hash) and not $skipConnect) {
+        Connect($hash);
     }
 
-    InternalTimer(gettimeofday() + $SmarterCoffee_DiscoveryInterval, "SmarterCoffee_RunDiscoveryProcess", $hash, 0);
+    InternalTimer(gettimeofday() + $discoveryInterval, "SmarterCoffee::RunDiscoveryProcess", $hash, 0);
 }
 
-sub SmarterCoffee_InetSocketAddressString($) {
-    my ($port, $inetAddress) = sockaddr_in($_[0]);
-    return inet_ntoa($inetAddress).":$port"
+sub InetSocketAddressString($) {
+    my ($sport, $inetAddress) = sockaddr_in($_[0]);
+    return inet_ntoa($inetAddress).":$sport"
 }
 
-sub SmarterCoffee_Discover($) {
+sub Discover($) {
     my ($hash) = @_;
 
     my $existingDeviceName = ($hash->{DeviceName} // "");
-    my $broadcastAddress = sockaddr_in($SmarterCoffee_Port, INADDR_BROADCAST);
+    my $broadcastAddress = sockaddr_in($port, INADDR_BROADCAST);
 
     Log3 $hash->{NAME}, 4,
-        "Discovery :: Broadcasting discovery request to ".SmarterCoffee_InetSocketAddressString($broadcastAddress)." (already discovered: $existingDeviceName)";
+        "Discovery :: Broadcasting discovery request to ".InetSocketAddressString($broadcastAddress)." (already discovered: $existingDeviceName)";
 
     socket(my $socket, AF_INET, SOCK_DGRAM, getprotobyname('udp'));
     setsockopt($socket, SOL_SOCKET, SO_BROADCAST, 1);
@@ -1130,17 +1199,17 @@ sub SmarterCoffee_Discover($) {
 
     while ($wait->can_read( 10 )) {
         my $deviceAddress = recv($socket, my $message, 128, 0);
-        my $inetSocketAddress = SmarterCoffee_InetSocketAddressString($deviceAddress);
+        my $inetSocketAddress = InetSocketAddressString($deviceAddress);
 
         $message = unpack('H*', $message);
 
         Log3 $hash->{NAME}, 4, "Discovery :: Received message $message from $inetSocketAddress";
 
-        if ($message =~ /^65.*7e.*/ and SmarterCoffee_ParseMessage($hash, $message)) {
-            my ($port, $inetAddress) = sockaddr_in($deviceAddress);
+        if ($message =~ /^65.*7e.*/ and ParseMessage($hash, $message)) {
+            my ($sport, $inetAddress) = sockaddr_in($deviceAddress);
 
             if (my ($hostname) = gethostbyaddr($inetAddress, AF_INET)) {
-                $hash->{DeviceName} = $hostname.":$port";
+                $hash->{DeviceName} = $hostname.":$sport";
             } else {
                 $hash->{DeviceName} = $inetSocketAddress;
             }
@@ -1247,7 +1316,7 @@ my $SmarterCoffee_StatusIconSVG = <<XML;
 </svg>
 XML
 
-sub SmarterCoffee_GetDevStateIcon {
+sub GetDevStateIcon {
     my ($name, $colors) = @_;
 
     my ($state, $icon) = (Value($name), $SmarterCoffee_StatusIconSVG);
@@ -1467,14 +1536,14 @@ sub SmarterCoffee_GetDevStateIcon {
 <b>Attributes</b><br>
 <ul>
     <li>
-        <code>attr &lt;name&gt; devStateIcon { SmarterCoffee_GetDevStateIcon($name) }</code>
+        <code>attr &lt;name&gt; devStateIcon { SmarterCoffee::GetDevStateIcon($name) }</code>
         <br><br>
-        The function <code>SmarterCoffee_GetDevStateIcon($name[, "...colors..."])</code> renders a custom dev state icon that displays
+        The function <code>SmarterCoffee::GetDevStateIcon($name[, "...colors..."])</code> renders a custom dev state icon that displays
         the machine states (ready, brewing, done) and shows information on carafe, hotplate and water level.
         <br><br>
         The icon is monochrome using a default color that may change to highlight states: ready, brewing, done.
-        Built-in colors can be adjusted with the second parameter of <code>SmarterCoffee_GetDevStateIcon</code>.<br>
-        E.g. using "<code>attr &lt;name&gt; devStateIcon { SmarterCoffee_GetDevStateIcon($name, '#7b7b7b green chocolate #336699' }</code>"
+        Built-in colors can be adjusted with the second parameter of <code>SmarterCoffee::GetDevStateIcon</code>.<br>
+        E.g. using "<code>attr &lt;name&gt; devStateIcon { SmarterCoffee::GetDevStateIcon($name, '#7b7b7b green chocolate #336699' }</code>"
         sets colors for default, ready, brewing and done.
         <br><br>
         Colors are specified as HTML color values delimited by whitespace using a fixed order of "default ready brewing done".
