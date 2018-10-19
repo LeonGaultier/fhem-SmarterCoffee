@@ -115,27 +115,27 @@ my $version = "1.0.0";
 sub SmarterCoffee_Initialize($) {
     my ($hash) = @_;
 
-    $hash->{DefFn}      = 'SmarterCoffee::Define';
-    $hash->{UndefFn}    = 'SmarterCoffee::Undefine';
-    $hash->{GetFn}      = 'SmarterCoffee::Get';
-    $hash->{SetFn}      = 'SmarterCoffee::Set';
-    $hash->{ReadFn}     = 'SmarterCoffee::Read';
-    $hash->{ReadyFn}    = 'SmarterCoffee::OpenIfRequiredAndWritePending';
-    $hash->{NotifyFn}   = 'SmarterCoffee::Notify';
-    $hash->{AttrFn}     = 'SmarterCoffee::Attr';
+    $hash->{DefFn}    = 'SmarterCoffee::Define';
+    $hash->{UndefFn}  = 'SmarterCoffee::Undefine';
+    $hash->{GetFn}    = 'SmarterCoffee::Get';
+    $hash->{SetFn}    = 'SmarterCoffee::Set';
+    $hash->{ReadFn}   = 'SmarterCoffee::Read';
+    $hash->{ReadyFn}  = 'SmarterCoffee::OpenIfRequiredAndWritePending';
+    $hash->{NotifyFn} = 'SmarterCoffee::Notify';
+    $hash->{AttrFn}   = 'SmarterCoffee::Attr';
 
     $hash->{AttrList} = ""
-        ."default-hotplate-on-for-minutes "
-        ."ignore-max-cups "
-        ."set-on-brews-coffee "
-        ."strength-coffee-weights "
-        ."strength-extra-percent "
-        ."strength-extra-pre-brew-cups "
-        ."strength-extra-pre-brew-delay-seconds "
-        ."strength-extra-start-on-device-strength:off,weak,medium,strong "
-        ."devioLoglevel:0,1,2,3,4,5 "
-        .$readingFnAttributes;
-        
+      . "default-hotplate-on-for-minutes "
+      . "ignore-max-cups "
+      . "set-on-brews-coffee "
+      . "strength-coffee-weights "
+      . "strength-extra-percent "
+      . "strength-extra-pre-brew-cups "
+      . "strength-extra-pre-brew-delay-seconds "
+      . "strength-extra-start-on-device-strength:off,weak,medium,strong "
+      . "devioLoglevel:0,1,2,3,4,5 "
+      . $readingFnAttributes;
+
     foreach my $d ( sort keys %{ $modules{SmarterCoffee}{defptr} } ) {
         my $hash = $modules{SmarterCoffee}{defptr}{$d};
         $hash->{VERSION} = $version;
@@ -156,6 +156,7 @@ use Socket;
 use IO::Select;
 
 use DevIo;
+
 #use HttpUtils;
 
 ## Import der FHEM Funktionen
@@ -183,14 +184,15 @@ BEGIN {
     );
 }
 
-my $port = 2081;
-my $discoveryInterval = 60 * 15;
+my $port                        = 2081;
+my $discoveryInterval           = 60 * 15;
 my $strengthExtraDefaultPercent = 1.4;
-my $strengthDefaultWeights = "3.5 3.9 4.3";
-my %hotplate = (default => 15, min => 5, max => 40);
+my $strengthDefaultWeights      = "3.5 3.9 4.3";
+my %hotplate                    = ( default => 15, min => 5, max => 40 );
 
 my %messageMaps = (
     status_bitmasks => [
+
         # BIT 1 = ???
         # BIT 2 = hotplate
         # BIT 3 = idle/heating
@@ -199,41 +201,63 @@ my %messageMaps = (
         # BIT 6 = ready/done
         # BIT 7 = grinder
         # BIT 8 = carafe
-        [ '00000000' => { grinder => "disabled", carafe => "missing", hotplate => "off", state => "maintenance" } ],
+        [
+            '00000000' => {
+                grinder  => "disabled",
+                carafe   => "missing",
+                hotplate => "off",
+                state    => "maintenance"
+            }
+        ],
         [ '01000000' => { hotplate => "on" } ],
-        [ '00000100' => { state => "ready" } ],
-        [ '00100000' => { state => "ready" } ], # Set when hotplate is off after being in "heating" state.
-        [ '01000100' => { state => "done" } ],
-        [ '00001000' => { state => "grinding" } ],
-        [ '01010000' => { state => "brewing" } ],
-        [ '01100000' => { state => "heating" } ],
+        [ '00000100' => { state    => "ready" } ],
+        [ '00100000' => { state    => "ready" } ]
+        ,    # Set when hotplate is off after being in "heating" state.
+        [ '01000100' => { state   => "done" } ],
+        [ '00001000' => { state   => "grinding" } ],
+        [ '01010000' => { state   => "brewing" } ],
+        [ '01100000' => { state   => "heating" } ],
         [ '00000010' => { grinder => "enabled" } ],
-        [ '00000001' => { carafe => "present" } ],
+        [ '00000001' => { carafe  => "present" } ],
     ],
 
-    water           => {
+    water => {
+
         # HEX key, only lower 4 bits are used.
         '00' => { water => "none", water_level => 0 },
-        '01' => { water => "low", water_level => 25 },
+        '01' => { water => "low",  water_level => 25 },
         '02' => { water => "half", water_level => 50 },
         '03' => { water => "full", water_level => 100 },
     },
 
-    strength        => {
+    strength => {
+
         # HEX key, only lower 4 bits are used.
-        '00' => { strength => "weak", strength_level => 1 },
+        '00' => { strength => "weak",   strength_level => 1 },
         '01' => { strength => "medium", strength_level => 2 },
         '02' => { strength => "strong", strength_level => 3 },
     },
 
-    cups            => {
+    cups => {
+
         # HEX key, only lower 4 bits are used.
-        '01' => 1, '02' => 2, '03' => 3, '04' => 4, '05' => 5, '06' => 6,
-        '07' => 7, '08' => 8, '09' => 9, '0a' => 10, '0b' => 11, '0c' => 12
+        '01' => 1,
+        '02' => 2,
+        '03' => 3,
+        '04' => 4,
+        '05' => 5,
+        '06' => 6,
+        '07' => 7,
+        '08' => 8,
+        '09' => 9,
+        '0a' => 10,
+        '0b' => 11,
+        '0c' => 12
     },
 
-    grinder         => {
-        '00' => "disabled", '01' => "enabled"
+    grinder => {
+        '00' => "disabled",
+        '01' => "enabled"
     }
 );
 
@@ -255,114 +279,134 @@ my %commands = (
     history                 => "467e"
 );
 
-my @getCommands = ("info", "carafe_required_status", "cups_single_mode_status", "get_defaults"); #, "history"
+my @getCommands = (
+    "info",                    "carafe_required_status",
+    "cups_single_mode_status", "get_defaults"
+);    #, "history"
 
 my %responseCodes = (
-    '00' => { message => 'Ok', success => 'yes' },
+    '00' => { message => 'Ok',                      success => 'yes' },
     '01' => { message => 'Ok, brewing in progress', success => 'yes' },
 
     '04' => { message => 'Ok, stopped', success => 'yes' },
 
     '05' => { message => 'No carafe, brewing not possible', success => 'no' },
-    '06' => { message => 'No water, brewing not possible', success => 'no' },
+    '06' => { message => 'No water, brewing not possible',  success => 'no' },
 
     '69' => { message => 'Invalid command', success => 'no' },
 );
 
-
 sub ParseMessage {
-    my ($hash, $message) = @_;
+    my ( $hash, $message ) = @_;
 
-    $message = ($hash->{PARTIAL} // "") if (not defined($message));
+    $message = ( $hash->{PARTIAL} // "" ) if ( not defined($message) );
 
-    if ($message =~ /^(32|03|47|49|4d|50|65)[0-9a-f]+7e.*/) {
+    if ( $message =~ /^(32|03|47|49|4d|50|65)[0-9a-f]+7e.*/ ) {
 
-        Log3 $hash->{NAME}, 5, "Connection :: Received from ".($hash->{DeviceName} // "unknown").": $message";
+        Log3 $hash->{NAME}, 5,
+            "Connection :: Received from "
+          . ( $hash->{DeviceName} // "unknown" )
+          . ": $message";
 
         # Handle multiple messages in one frame:
-        my @messages = split("7e", $message);
-        if (int(@messages) > 1) {
+        my @messages = split( "7e", $message );
+        if ( int(@messages) > 1 ) {
             my $failed;
             for (@messages) {
-                $failed = 1 if (not ParseMessage($hash, $_."7e"));
+                $failed = 1 if ( not ParseMessage( $hash, $_ . "7e" ) );
             }
             return not $failed;
         }
 
         # Handle single message:
-        $hash->{".last_response"} = $message if $message =~ /^(03|49|4d|50|65).+7e.*/;
+        $hash->{".last_response"} = $message
+          if $message =~ /^(03|49|4d|50|65).+7e.*/;
 
         # Parse response of a command.
-        if ($message =~ /^03([0-9a-f]{2})7e.*/) {
-            if (my $response = ($responseCodes{$1} // 0)) {
-                UpdateReadings($hash,
+        if ( $message =~ /^03([0-9a-f]{2})7e.*/ ) {
+            if ( my $response = ( $responseCodes{$1} // 0 ) ) {
+                UpdateReadings(
+                    $hash,
                     sub($) {
                         my ($updateReading) = @_;
-                        while (my ($key, $value) = each %{$response}) {
+                        while ( my ( $key, $value ) = each %{$response} ) {
                             $updateReading->( "last_command_$key", $value );
                         }
-                        $updateReading->( "last_command", $hash->{".last_set_command"} );
-                    }, 1);
-            } else {
-                Log3 $hash->{NAME}, 3, "Connection :: Unknown command response '$message'.";
+                        $updateReading->(
+                            "last_command", $hash->{".last_set_command"}
+                        );
+                    },
+                    1
+                );
+            }
+            else {
+                Log3 $hash->{NAME}, 3,
+                  "Connection :: Unknown command response '$message'.";
             }
         }
 
         # Parse history message.
-        if ($message =~ /^47([0-9a-f]{2})(.+)7e.*/) {
-            my @history = split("7d", $2);
+        if ( $message =~ /^47([0-9a-f]{2})(.+)7e.*/ ) {
+            my @history = split( "7d", $2 );
 
-            Log3 $hash->{NAME}, 5, Dumper(@history); #TODO
+            Log3 $hash->{NAME}, 5, Dumper(@history);    #TODO
         }
 
         # Parse default settings message.
-        if ($message =~ /^49([0-9a-f]+)7e.*/) {
+        if ( $message =~ /^49([0-9a-f]+)7e.*/ ) {
             my %values = (
-                cups     => '0'.substr($1, 1, 1),
-                strength => substr($1, 2, 2),
-                grinder  => '0'.substr($1, 5, 1),
-                hotplate => substr($1, 6, 2),
+                cups     => '0' . substr( $1, 1, 1 ),
+                strength => substr( $1, 2, 2 ),
+                grinder  => '0' . substr( $1, 5, 1 ),
+                hotplate => substr( $1, 6, 2 ),
             );
 
-            ParseStatusValues($hash, \%values);
-            DoTrigger($hash->{NAME}, "get_defaults");
-            Set($hash, @{[ $hash->{NAME}, "defaults" ]});
+            ParseStatusValues( $hash, \%values );
+            DoTrigger( $hash->{NAME}, "get_defaults" );
+            Set( $hash, @{ [ $hash->{NAME}, "defaults" ] } );
         }
 
         # Parse carafe detection status message.
-        if ($message =~ /^4d([0-9a-f]{2})7e.*/) {
-            UpdateReading($hash, "carafe_required", ($1 eq "01" ? "no" : "yes"));
+        if ( $message =~ /^4d([0-9a-f]{2})7e.*/ ) {
+            UpdateReading( $hash, "carafe_required",
+                ( $1 eq "01" ? "no" : "yes" ) );
         }
 
         # Parse single cup mode status message.
-        if ($message =~ /^50([0-9a-f]{2})7e.*/) {
-            UpdateReading($hash, "cups_single_mode", ($1 eq "00" ? "no" : "yes"));
+        if ( $message =~ /^50([0-9a-f]{2})7e.*/ ) {
+            UpdateReading( $hash, "cups_single_mode",
+                ( $1 eq "00" ? "no" : "yes" ) );
         }
 
         # Parse info & discovery message.
-        if ($message =~ /^65([0-9a-f]{2})([0-9a-f]{2})7e.*/) {
-            $hash->{FIRMWARE} = ord(pack("H2", $2));
-            return 0 if ($1 ne "02");
+        if ( $message =~ /^65([0-9a-f]{2})([0-9a-f]{2})7e.*/ ) {
+            $hash->{FIRMWARE} = ord( pack( "H2", $2 ) );
+            return 0 if ( $1 ne "02" );
         }
 
         # Parse status message.
-        if ($message =~ /^(32[0-9a-f]+7e).*/ and $message ne $hash->{".raw_last_status"}) {
-            $hash->{".last_status"} = $hash->{".raw_last_status"} = $message = $1;
+        if (    $message =~ /^(32[0-9a-f]+7e).*/
+            and $message ne $hash->{".raw_last_status"} )
+        {
+            $hash->{".last_status"} = $hash->{".raw_last_status"} = $message =
+              $1;
 
             my %values = (
-                status   => substr($message, 2, 2),
-                water    => '0'.substr($message, 5, 1),
-                strength => substr($message, 8, 2),
-                cups     => '0'.substr($message, 11, 1),
+                status   => substr( $message, 2, 2 ),
+                water    => '0' . substr( $message, 5, 1 ),
+                strength => substr( $message, 8, 2 ),
+                cups     => '0' . substr( $message, 11, 1 ),
             );
 
-            ParseStatusValues($hash, \%values);
+            ParseStatusValues( $hash, \%values );
         }
 
         $hash->{CONNECTION} = ""
-            ."STATUS: ".($hash->{".last_status"} // "n/a")
-            ." | COMMAND: ".($hash->{".last_command"} // "n/a")
-            ." => ".($hash->{".last_response"} // "n/a");
+          . "STATUS: "
+          . ( $hash->{".last_status"} // "n/a" )
+          . " | COMMAND: "
+          . ( $hash->{".last_command"} // "n/a" ) . " => "
+          . ( $hash->{".last_response"} // "n/a" );
 
         return 1;
     }
@@ -371,80 +415,114 @@ sub ParseMessage {
 }
 
 sub DumpToExpression($) {
-    my $d = Dumper($_[0]);
+    my $d = Dumper( $_[0] );
     $d =~ s/\s+/ /g;
     $d =~ s/[^\}]*(\{.+\})[^\}]*/$1/;
     return $d;
 }
 
 sub ParseStatusValues {
-    my ($hash, $values) = @_;
+    my ( $hash, $values ) = @_;
 
-    while (my ($mappingKey, $rawValue) = each %{$values}) {
-        if ($mappingKey eq "status") {
+    while ( my ( $mappingKey, $rawValue ) = each %{$values} ) {
+        if ( $mappingKey eq "status" ) {
             my %status = ();
-            my $unpackedStatusBits = sprintf('%08b', ord(pack("H2", $rawValue)));
+            my $unpackedStatusBits =
+              sprintf( '%08b', ord( pack( "H2", $rawValue ) ) );
             $hash->{".last_status"} .= " ($unpackedStatusBits)";
 
-            for (@{$messageMaps{"status_bitmasks"}}) {
-                my ($unpackedBitmask, $statusInfo) = @{$_};
+            for ( @{ $messageMaps{"status_bitmasks"} } ) {
+                my ( $unpackedBitmask, $statusInfo ) = @{$_};
 
-                my $bitmask = ord(pack("B8", $unpackedBitmask));
-                if (($bitmask & ord(pack("B8", $unpackedStatusBits))) == $bitmask) {
-                    while (my ($k, $v) = each(%{$statusInfo})) { $status{$k} = $v }
+                my $bitmask = ord( pack( "B8", $unpackedBitmask ) );
+                if ( ( $bitmask & ord( pack( "B8", $unpackedStatusBits ) ) ) ==
+                    $bitmask )
+                {
+                    while ( my ( $k, $v ) = each( %{$statusInfo} ) ) {
+                        $status{$k} = $v;
+                    }
 
-                    Log3 $hash->{NAME}, 5, "Connection :: Matched all bits of $unpackedBitmask in $unpackedStatusBits. Setting: ".DumpToExpression($statusInfo);
+                    Log3 $hash->{NAME}, 5,
+"Connection :: Matched all bits of $unpackedBitmask in $unpackedStatusBits. Setting: "
+                      . DumpToExpression($statusInfo);
                 }
             }
-            $values->{$mappingKey} = { %status };
-        } else {
-            if (defined($messageMaps{$mappingKey}{$rawValue})) {
+            $values->{$mappingKey} = {%status};
+        }
+        else {
+            if ( defined( $messageMaps{$mappingKey}{$rawValue} ) ) {
                 $values->{$mappingKey} = $messageMaps{$mappingKey}{$rawValue};
-            } elsif ($mappingKey eq "hotplate") {
-                $values->{$mappingKey} = { "hotplate_on_for_minutes" => hex($rawValue) };
-            } else {
-                Log3 $hash->{NAME}, 3, "Connection :: Unknown value '$rawValue' for $mappingKey message part.";
-                $values->{$mappingKey} = { };
+            }
+            elsif ( $mappingKey eq "hotplate" ) {
+                $values->{$mappingKey} =
+                  { "hotplate_on_for_minutes" => hex($rawValue) };
+            }
+            else {
+                Log3 $hash->{NAME}, 3,
+"Connection :: Unknown value '$rawValue' for $mappingKey message part.";
+                $values->{$mappingKey} = {};
             }
         }
     }
 
-    Log3 $hash->{NAME}, 5, "Connection :: Parsed message: ".Dumper($values);
+    Log3 $hash->{NAME}, 5, "Connection :: Parsed message: " . Dumper($values);
 
-    UpdateReadings($hash,
+    UpdateReadings(
+        $hash,
         sub($) {
             my ($updateReading) = @_;
             my $state = 0;
 
-            while (my ($n, $readings) = each %{$values}) {
-                $readings = { $n => $readings } if (ref($readings) ne "HASH");
+            while ( my ( $n, $readings ) = each %{$values} ) {
+                $readings = { $n => $readings } if ( ref($readings) ne "HASH" );
 
-                while (my ($name, $value) = each %{$readings}) {
-                    if ($name eq "state") {
+                while ( my ( $name, $value ) = each %{$readings} ) {
+                    if ( $name eq "state" ) {
                         $state = $value;
-                    } else {
+                    }
+                    else {
                         $updateReading->( $name, $value );
                     }
                 }
             }
 
             # Adding calculated readings
-            if (defined($values->{"water"}) and (my $maxCups = int(($values->{"water"}{"water_level"} // 0) / 100 * 12))) {
-                $maxCups = 3 if ($maxCups > 3 and ReadingsVal($hash->{NAME}, "cups_single_mode", "") eq "yes");
+            if (
+                defined( $values->{"water"} )
+                and (
+                    my $maxCups = int(
+                        ( $values->{"water"}{"water_level"} // 0 ) / 100 * 12
+                    )
+                )
+              )
+            {
+                $maxCups = 3
+                  if ( $maxCups > 3
+                    and ReadingsVal( $hash->{NAME}, "cups_single_mode", "" ) eq
+                    "yes" );
                 $updateReading->( "cups_max", $maxCups );
             }
 
             # Overriding "ready" state if carafe or water is missing.
-            if ($state eq "ready") {
-                my $cupsOk = (AttrVal($hash->{NAME}, "ignore-max-cups", 1)
-                    or (ReadingsNum($hash->{NAME}, "cups_max", 0) >= ReadingsNum($hash->{NAME}, "cups", 0)));
+            if ( $state eq "ready" ) {
+                my $cupsOk = (
+                    AttrVal( $hash->{NAME}, "ignore-max-cups", 1 )
+                      or ( ReadingsNum( $hash->{NAME}, "cups_max", 0 ) >=
+                        ReadingsNum( $hash->{NAME}, "cups", 0 ) )
+                );
 
-                my $carafeOk = (ReadingsVal($hash->{NAME}, "carafe_required", "yes") ne "yes"
-                    or (($values->{"status"}{"carafe"} // "") eq "present"));
+                my $carafeOk = (
+                    ReadingsVal( $hash->{NAME}, "carafe_required", "yes" ) ne
+                      "yes"
+                      or
+                      ( ( $values->{"status"}{"carafe"} // "" ) eq "present" )
+                );
 
-                my $waterOk = (($values->{"water"}{"water_level"} // 0) > 0);
+                my $waterOk =
+                  ( ( $values->{"water"}{"water_level"} // 0 ) > 0 );
 
-                $state = "maintenance" if (not $carafeOk or not $waterOk or not $cupsOk);
+                $state = "maintenance"
+                  if ( not $carafeOk or not $waterOk or not $cupsOk );
             }
 
             # Setting status at last when all other readings are updated.
@@ -456,79 +534,94 @@ sub ParseStatusValues {
 sub Connect($) {
     my ($hash) = @_;
 
-    my $isNewConnection = ReadingsVal($hash->{NAME},'state','none') eq "initializing";
+    my $isNewConnection =
+      ReadingsVal( $hash->{NAME}, 'state', 'none' ) eq "initializing";
 
-    readingsSingleUpdate($hash,'state','disconnected',0);
-    delete $hash->{INVALID_DEVICE} if defined($hash->{INVALID_DEVICE});
+    readingsSingleUpdate( $hash, 'state', 'disconnected', 0 );
+    delete $hash->{INVALID_DEVICE} if defined( $hash->{INVALID_DEVICE} );
 
-    if ($hash->{AUTO_DETECT}) {
-        RunDiscoveryProcess($hash, 1);
+    if ( $hash->{AUTO_DETECT} ) {
+        RunDiscoveryProcess( $hash, 1 );
     }
 
-    if (defined($hash->{DeviceName})) {
-        if (not ($hash->{DeviceName} =~ m/^(.+):([0-9]+)$/)) {
+    if ( defined( $hash->{DeviceName} ) ) {
+        if ( not( $hash->{DeviceName} =~ m/^(.+):([0-9]+)$/ ) ) {
             $hash->{DeviceName} .= ":$port";
         }
 
         main::main::DevIo_CloseDev($hash) if main::DevIo_IsOpen($hash);
-        delete $hash->{DevIoJustClosed} if ($hash->{DevIoJustClosed});
+        delete $hash->{DevIoJustClosed}   if ( $hash->{DevIoJustClosed} );
 
-        return OpenIfRequiredAndWritePending($hash, $isNewConnection);
+        return OpenIfRequiredAndWritePending( $hash, $isNewConnection );
     }
     return 0;
 }
 
 sub OpenIfRequiredAndWritePending($;$) {
-    my ($hash, $initial) = @_;
-    return main::DevIo_OpenDev($hash, ($initial ? 0 : 1), "SmarterCoffee::WritePending");
+    my ( $hash, $initial ) = @_;
+    return main::DevIo_OpenDev( $hash, ( $initial ? 0 : 1 ),
+        "SmarterCoffee::WritePending" );
 }
 
 sub HandleInitialConnectState($) {
     my ($hash) = @_;
 
-    return if ($hash->{".initial-connection-state"});
+    return if ( $hash->{".initial-connection-state"} );
 
-    if (main::DevIo_IsOpen($hash) and (ReadingsVal($hash->{NAME},'state','none') eq "disconnected" or ReadingsVal($hash->{NAME},'state','none') eq "opened")) {
+    if (
+        main::DevIo_IsOpen($hash)
+        and (  ReadingsVal( $hash->{NAME}, 'state', 'none' ) eq "disconnected"
+            or ReadingsVal( $hash->{NAME}, 'state', 'none' ) eq "opened" )
+      )
+    {
         $hash->{".initial-connection-state"} = 1;
 
-        readingsSingleUpdate($hash,'state','connected',0);
-        Get($hash, @{[ $hash->{NAME}, "info" ]}) if (not $hash->{AUTO_DETECT});
-        Get($hash, @{[ $hash->{NAME}, "carafe_required_status" ]});
-        Get($hash, @{[ $hash->{NAME}, "cups_single_mode_status" ]});
+        readingsSingleUpdate( $hash, 'state', 'connected', 0 );
+        Get( $hash, @{ [ $hash->{NAME}, "info" ] } )
+          if ( not $hash->{AUTO_DETECT} );
+        Get( $hash, @{ [ $hash->{NAME}, "carafe_required_status" ] } );
+        Get( $hash, @{ [ $hash->{NAME}, "cups_single_mode_status" ] } );
 
         delete $hash->{".initial-connection-state"};
     }
 }
 
 sub WritePending {
-    my ($hash, $mustSucceed) = @_;
+    my ( $hash, $mustSucceed ) = @_;
 
-    if (main::DevIo_IsOpen($hash)) {
-        my $pending = ($hash->{PENDING_COMMAND} // 0);
+    if ( main::DevIo_IsOpen($hash) ) {
+        my $pending = ( $hash->{PENDING_COMMAND} // 0 );
 
         # Handling initial call on a fresh connection
         HandleInitialConnectState($hash);
 
         # Processing pending commands
-        if (($hash->{INVALID_DEVICE} // "0") eq "1") {
-            readingsSingleUpdate($hash,'state','invalid',0);
-        } else {
+        if ( ( $hash->{INVALID_DEVICE} // "0" ) eq "1" ) {
+            readingsSingleUpdate( $hash, 'state', 'invalid', 0 );
+        }
+        else {
             if ($pending) {
-                delete $hash->{PENDING_COMMAND} if defined($hash->{PENDING_COMMAND});
+                delete $hash->{PENDING_COMMAND}
+                  if defined( $hash->{PENDING_COMMAND} );
 
-                Log3 $hash->{NAME}, 4, "Connection :: Sending to ".$hash->{DeviceName}.": $pending";
-                main::DevIo_SimpleWrite($hash, $pending, 1);
+                Log3 $hash->{NAME}, 4,
+                    "Connection :: Sending to "
+                  . $hash->{DeviceName}
+                  . ": $pending";
+                main::DevIo_SimpleWrite( $hash, $pending, 1 );
                 $hash->{".raw_last_status"} = "";
 
-                my $result = main::DevIo_SimpleReadWithTimeout($hash, 5);
+                my $result = main::DevIo_SimpleReadWithTimeout( $hash, 5 );
                 if ($result) {
-                    $result = Read($hash, $result);
-                } else {
+                    $result = Read( $hash, $result );
+                }
+                else {
                     main::DevIo_Disconnected($hash);
                 }
 
-                $hash->{INVALID_DEVICE} = "1" if ($mustSucceed and not $result);
-                $hash->{PENDING_COMMAND} = $pending if (not $result);
+                $hash->{INVALID_DEVICE} = "1"
+                  if ( $mustSucceed and not $result );
+                $hash->{PENDING_COMMAND} = $pending if ( not $result );
             }
         }
     }
@@ -537,30 +630,36 @@ sub WritePending {
 }
 
 sub Read($;$) {
-    my ($hash, $buffer) = @_;
+    my ( $hash, $buffer ) = @_;
 
-    # Handle case that fhem reconnected a broken connection and state is "opened".
-    HandleInitialConnectState($hash) if (not defined($buffer));
+  # Handle case that fhem reconnected a broken connection and state is "opened".
+    HandleInitialConnectState($hash) if ( not defined($buffer) );
 
     # Abort read if we already detected that the device is invalid.
-    return 0 if ($hash->{INVALID_DEVICE} // 0);
+    return 0 if ( $hash->{INVALID_DEVICE} // 0 );
 
-    # Reset partial data buffer if it exceeds length of 512 (256 bytes) or when $buffer was specified explicitly.
-    $hash->{PARTIAL} = "" if (not defined($hash->{PARTIAL}) or defined($buffer) or length($hash->{PARTIAL} // "") >= 512);
+# Reset partial data buffer if it exceeds length of 512 (256 bytes) or when $buffer was specified explicitly.
+    $hash->{PARTIAL} = ""
+      if ( not defined( $hash->{PARTIAL} )
+        or defined($buffer)
+        or length( $hash->{PARTIAL} // "" ) >= 512 );
 
     # Reading available bytes from the socket (if not specified from external).
-    $buffer = main::DevIo_SimpleRead($hash) if (not defined($buffer));
-    return 0 if (not defined($buffer));
+    $buffer = main::DevIo_SimpleRead($hash) if ( not defined($buffer) );
+    return 0 if ( not defined($buffer) );
 
     # Appending message bytes as hex string.
-    $hash->{PARTIAL} .= unpack('H*', $buffer);
+    $hash->{PARTIAL} .= unpack( 'H*', $buffer );
 
     # Parsing the message and populate readings.
-    if ($hash->{PARTIAL} ne "") {
-        if (ParseMessage($hash)) {
+    if ( $hash->{PARTIAL} ne "" ) {
+        if ( ParseMessage($hash) ) {
             delete $hash->{PARTIAL};
-        } else {
-            Log3 $hash->{NAME}, 2, "Connection :: Failed parsing buffer content: ".$hash->{PARTIAL};
+        }
+        else {
+            Log3 $hash->{NAME}, 2,
+              "Connection :: Failed parsing buffer content: "
+              . $hash->{PARTIAL};
             return 0;
         }
     }
@@ -569,54 +668,67 @@ sub Read($;$) {
 }
 
 sub Define($$) {
-    my ($hash, $def) = @_;
-    my @param = split('[ \t]+', $def);
+    my ( $hash, $def ) = @_;
+    my @param = split( '[ \t]+', $def );
     my $name = $hash->{NAME};
 
     # set default settings on first define
     if ($init_done) {
-        CommandAttr(undef,$name . ' alias Coffee Machine') if ( AttrVal($name,'alias','none') eq 'none' );
-        CommandAttr(undef,$name . ' webCmd strength:cups:start:hotplate:off') if ( AttrVal($name,'webCmd','none') eq 'none' );
-        CommandAttr(undef,$name . ' strength-extra-percent ' . $strengthExtraDefaultPercent) if ( AttrVal($name,'strength-extra-percent','none') eq 'none' );
-        CommandAttr(undef,$name . ' default-hotplate-on-for-minutes 15 5=20 8=30 10=35') if ( AttrVal($name,'default-hotplate-on-for-minutes','none') eq 'none' );
-        CommandAttr(undef,$name . ' event-on-change-reading .*') if ( AttrVal($name,'event-on-change-reading','none') eq 'none' );
-        CommandAttr(undef,$name . ' event-on-update-reading last_command.*') if ( AttrVal($name,'event-on-update-reading','none') eq 'none' );
+        CommandAttr( undef, $name . ' alias Coffee Machine' )
+          if ( AttrVal( $name, 'alias', 'none' ) eq 'none' );
+        CommandAttr( undef, $name . ' webCmd strength:cups:start:hotplate:off' )
+          if ( AttrVal( $name, 'webCmd', 'none' ) eq 'none' );
+        CommandAttr( undef,
+            $name . ' strength-extra-percent ' . $strengthExtraDefaultPercent )
+          if ( AttrVal( $name, 'strength-extra-percent', 'none' ) eq 'none' );
+        CommandAttr( undef,
+            $name . ' default-hotplate-on-for-minutes 15 5=20 8=30 10=35' )
+          if ( AttrVal( $name, 'default-hotplate-on-for-minutes', 'none' ) eq
+            'none' );
+        CommandAttr( undef, $name . ' event-on-change-reading .*' )
+          if ( AttrVal( $name, 'event-on-change-reading', 'none' ) eq 'none' );
+        CommandAttr( undef, $name . ' event-on-update-reading last_command.*' )
+          if ( AttrVal( $name, 'event-on-update-reading', 'none' ) eq 'none' );
     }
 
-    CommandAttr(undef,$name . 'devStateIcon { SmarterCoffee::GetDevStateIcon($name) }') if ( AttrVal($name,'devStateIcon','none') eq 'none' or AttrVal($name,'devStateIcon','none') eq '{ SmarterCoffee_GetDevStateIcon($name) }' );
+    CommandAttr( undef,
+        $name . 'devStateIcon { SmarterCoffee::GetDevStateIcon($name) }' )
+      if ( AttrVal( $name, 'devStateIcon', 'none' ) eq 'none'
+        or AttrVal( $name, 'devStateIcon', 'none' ) eq
+        '{ SmarterCoffee_GetDevStateIcon($name) }' );
 
     $hash->{VERSION} = $version;
-    if (int(@param) < 3) {
+    if ( int(@param) < 3 ) {
         $hash->{AUTO_DETECT} = 1;
-    } else {
+    }
+    else {
         delete $hash->{AUTO_DETECT};
         $hash->{DeviceName} = $param[2];
     }
 
     $hash->{NOTIFYDEV} = "global,$name";
-    readingsSingleUpdate($hash,'state','initializing',0);
+    readingsSingleUpdate( $hash, 'state', 'initializing', 0 );
 
-    $hash->{".last_command"} =
-    $hash->{".last_response"} =
-    $hash->{".last_status"} =
-    $hash->{".raw_last_status"} = "";
+    $hash->{".last_command"} = $hash->{".last_response"} =
+      $hash->{".last_status"} = $hash->{".raw_last_status"} = "";
 
     Connect($hash);
-    
+
     $modules{SmarterCoffee}{defptr}{CoolTux} = $hash;
 
-    Log3 $hash->{NAME}, 4, "Instance :: Defined module 'SmarterCoffee': ".Dumper($hash);
+    Log3 $hash->{NAME}, 4,
+      "Instance :: Defined module 'SmarterCoffee': " . Dumper($hash);
 }
 
-
 sub Undefine($$) {
-    my ($hash, $arg) = @_;
+    my ( $hash, $arg ) = @_;
 
     RemoveInternalTimer($hash);
     main::DevIo_CloseDev($hash);
 
-    Log3 $hash->{NAME}, 4, "Instance :: Closed module 'SmarterCoffee': ".Dumper($hash);
-    
+    Log3 $hash->{NAME}, 4,
+      "Instance :: Closed module 'SmarterCoffee': " . Dumper($hash);
+
     delete( $modules{SmarterCoffee}{defptr}{CoolTux} );
 
     return undef;
@@ -625,17 +737,19 @@ sub Undefine($$) {
 sub Attr(@) {
 
     my ( $cmd, $name, $attrName, $attrVal ) = @_;
-    my $hash                                = $defs{$name};
+    my $hash = $defs{$name};
 
+    if ( $attrName eq "devioLoglevel" ) {
+        if ( $cmd eq "set" ) {
+            $hash->{devioLoglevel} = $attrVal;
+            Log3 $name, 3,
+              "SmarterCoffee ($name) - set devioLoglevel to $attrVal";
 
-    if( $attrName eq "devioLoglevel" ) {
-        if( $cmd eq "set" ) {
-            $hash->{devioLoglevel}   = $attrVal;
-            Log3 $name, 3, "SmarterCoffee ($name) - set devioLoglevel to $attrVal";
-        
-        } elsif( $cmd eq "del" ) {
+        }
+        elsif ( $cmd eq "del" ) {
             delete $hash->{devioLoglevel};
-            Log3 $name, 3, "SmarterCoffee ($name) - delete Internal devioLoglevel";
+            Log3 $name, 3,
+              "SmarterCoffee ($name) - delete Internal devioLoglevel";
         }
     }
 
@@ -643,51 +757,77 @@ sub Attr(@) {
 }
 
 sub Get {
-    my ($hash, @param) = @_;
+    my ( $hash, @param ) = @_;
 
-    if (grep {$_ eq ($param[1] // "")} @getCommands) {
-        return Set($hash, @param) // "Ok :: ".$hash->{".last_response"};
-    } else {
-        return "Unknown argument $param[1], choose one of ".join(":noArg ", @getCommands).":noArg";
+    if ( grep { $_ eq ( $param[1] // "" ) } @getCommands ) {
+        return Set( $hash, @param ) // "Ok :: " . $hash->{".last_response"};
+    }
+    else {
+        return
+            "Unknown argument $param[1], choose one of "
+          . join( ":noArg ", @getCommands )
+          . ":noArg";
     }
 }
 
 sub Set {
-    my ($hash, @param) = @_;
+    my ( $hash, @param ) = @_;
 
-    my $desiredCups = defined($hash->{".extra_strength.original_desired_cups"})
-        ? $hash->{".extra_strength.original_desired_cups"}
-        : ReadingsVal($hash->{NAME}, "cups", 1);
+    my $desiredCups =
+      defined( $hash->{".extra_strength.original_desired_cups"} )
+      ? $hash->{".extra_strength.original_desired_cups"}
+      : ReadingsVal( $hash->{NAME}, "cups", 1 );
 
     my $optionToMessage = sub($$;$) {
-        my ($option, $optionValue, $value) = @_;
+        my ( $option, $optionValue, $value ) = @_;
 
         # Remembering "cups" when a message part is looked-up.
-        $desiredCups = int($optionValue) if ($option eq "cups" and $optionValue =~ /^[0-9]+$/);
+        $desiredCups = int($optionValue)
+          if ( $option eq "cups" and $optionValue =~ /^[0-9]+$/ );
 
         # Special treatment for hotplate, syntax: "set hotplate (on|off) [5-40]"
-        if ($option =~ /^hotplate.*/) {
-            # Select default time from "[minutes] [cups=minutes]", e.g.: "15 5=20 10=35" means: 15 default, 20 from 5 cups and 35 from 10 cups.
-            my ($defaultOnForMinutes, $overrides) = parseParams(AttrVal($hash->{NAME}, "default-hotplate-on-for-minutes", $hotplate{default}));
-            $defaultOnForMinutes = $defaultOnForMinutes->[0] if (defined($defaultOnForMinutes) and int($defaultOnForMinutes) > 0);
-            for my $key (sort { $a <=> $b } (keys %{$overrides})) {
-                $defaultOnForMinutes = $overrides->{$key} if (int($desiredCups) >= int($key));
+        if ( $option =~ /^hotplate.*/ ) {
+
+# Select default time from "[minutes] [cups=minutes]", e.g.: "15 5=20 10=35" means: 15 default, 20 from 5 cups and 35 from 10 cups.
+            my ( $defaultOnForMinutes, $overrides ) = parseParams(
+                AttrVal(
+                    $hash->{NAME}, "default-hotplate-on-for-minutes",
+                    $hotplate{default}
+                )
+            );
+            $defaultOnForMinutes = $defaultOnForMinutes->[0]
+              if ( defined($defaultOnForMinutes)
+                and int($defaultOnForMinutes) > 0 );
+            for my $key ( sort { $a <=> $b } ( keys %{$overrides} ) ) {
+                $defaultOnForMinutes = $overrides->{$key}
+                  if ( int($desiredCups) >= int($key) );
             }
 
-            $value = $optionValue if (not defined($value));
-            $value = $value =~ /^[0-9]+$/ ? int($value) : int($defaultOnForMinutes);
-            $value = $hotplate{max} if ($value > $hotplate{max});
-            $value = $hotplate{min} if ($value < $hotplate{min});
+            $value = $optionValue if ( not defined($value) );
+            $value =
+              $value =~ /^[0-9]+$/ ? int($value) : int($defaultOnForMinutes);
+            $value = $hotplate{max} if ( $value > $hotplate{max} );
+            $value = $hotplate{min} if ( $value < $hotplate{min} );
 
-            UpdateReading($hash, "hotplate_on_for_minutes", ($option eq "hotplate_off" ? 0 : $value));
+            UpdateReading( $hash, "hotplate_on_for_minutes",
+                ( $option eq "hotplate_off" ? 0 : $value ) );
 
-            return unpack('H*', pack('C', $value));
+            return unpack( 'H*', pack( 'C', $value ) );
 
-        } elsif (defined($messageMaps{$option}) and defined($optionValue)) {
-            # Ordinary values are looked up in the message maps (looking up the HEX code that backs a setting).
-            for my $key (keys %{$messageMaps{$option}}) {
+        }
+        elsif ( defined( $messageMaps{$option} ) and defined($optionValue) ) {
+
+# Ordinary values are looked up in the message maps (looking up the HEX code that backs a setting).
+            for my $key ( keys %{ $messageMaps{$option} } ) {
                 my $v = $messageMaps{$option}{$key};
-                if ((ref($v) eq "HASH" ? grep(/^$optionValue$/, values %{$v}) : $v eq $optionValue)) {
+                if (
+                    (
+                        ref($v) eq "HASH"
+                        ? grep( /^$optionValue$/, values %{$v} )
+                        : $v eq $optionValue
+                    )
+                  )
+                {
                     return $key;
                 }
             }
@@ -697,116 +837,188 @@ sub Set {
     };
 
     # Command & params pre-processing
-    my ($instanceName, $option, $messagePart) = (shift @param, shift @param, undef);
+    my ( $instanceName, $option, $messagePart ) =
+      ( shift @param, shift @param, undef );
 
     # Support "set <name> off"
-    $option = "stop" if ($option =~ /^off$/i);
+    $option = "stop" if ( $option =~ /^off$/i );
 
     # Support "set <name> on" and "set <name> start"
-    if (($option =~ /^on$/i and AttrVal($hash->{NAME}, "set-on-brews-coffee", "0") =~ /^(yes|true|1)$/i) or $option =~ /^start$/i) {
+    if (
+        (
+            $option =~ /^on$/i
+            and AttrVal( $hash->{NAME}, "set-on-brews-coffee", "0" ) =~
+            /^(yes|true|1)$/i
+        )
+        or $option =~ /^start$/i
+      )
+    {
         $option = "brew";
     }
 
-    # Support "set 6-cups" as alias to "set brew 6" (for better readable webCmds)
-    if ($option =~ /^([0-9]+)-cups(|[\-_,:;][a-z]+)$/i) {
-        unshift(@param, substr($2, 1)) if ($2); # supporting "set 3-cups,strong"
-        unshift(@param, $1);
+   # Support "set 6-cups" as alias to "set brew 6" (for better readable webCmds)
+    if ( $option =~ /^([0-9]+)-cups(|[\-_,:;][a-z]+)$/i ) {
+        unshift( @param, substr( $2, 1 ) )
+          if ($2);    # supporting "set 3-cups,strong"
+        unshift( @param, $1 );
         $option = "brew";
     }
 
-    if ($option eq "brew" or $option eq "defaults") {
+    if ( $option eq "brew" or $option eq "defaults" ) {
+
         # Handle extra strong coffee
-        if (($param[1] // ReadingsVal($hash->{NAME}, "strength", "")) =~ /^extra.*/) {
-            # Enable grinder in extra mode if required and option is not defaults.
-            my $grinderEnabled = (($param[3] // ReadingsVal($hash->{NAME}, "grinder", "")) eq "enabled");
-            if ($option ne "defaults" and not $grinderEnabled and ($param[3] // "") ne "disabled") {
-                Set($hash, @{[ $hash->{NAME}, "grinder", "enabled" ]});
+        if ( ( $param[1] // ReadingsVal( $hash->{NAME}, "strength", "" ) ) =~
+            /^extra.*/ )
+        {
+          # Enable grinder in extra mode if required and option is not defaults.
+            my $grinderEnabled =
+              ( ( $param[3] // ReadingsVal( $hash->{NAME}, "grinder", "" ) ) eq
+                  "enabled" );
+            if (    $option ne "defaults"
+                and not $grinderEnabled
+                and ( $param[3] // "" ) ne "disabled" )
+            {
+                Set( $hash, @{ [ $hash->{NAME}, "grinder", "enabled" ] } );
                 $grinderEnabled = 1;
-                $param[3] = "enabled" if defined($param[3]);
+                $param[3] = "enabled" if defined( $param[3] );
             }
 
-            if ($option ne "defaults" and $grinderEnabled) {
-                if (TranslateParamsForExtraStrength($hash, \@param, "grind")) {
-                    my ($cups, $error) = ($hash->{".extra_strength.desired_cups"}, $hash->{".extra_strength.error_rate"});
-                    Log3 $hash->{NAME}, 3, "Extra Strength :: Grinding [".join(" ", @param)."] to get $cups cups (error rate: $error%).";
-                } else {
+            if ( $option ne "defaults" and $grinderEnabled ) {
+                if (
+                    TranslateParamsForExtraStrength( $hash, \@param, "grind" ) )
+                {
+                    my ( $cups, $error ) = (
+                        $hash->{".extra_strength.desired_cups"},
+                        $hash->{".extra_strength.error_rate"}
+                    );
+                    Log3 $hash->{NAME}, 3,
+                        "Extra Strength :: Grinding ["
+                      . join( " ", @param )
+                      . "] to get $cups cups (error rate: $error%).";
+                }
+                else {
                     return "strength 'extra' failed. check water level.";
                 }
-            } else {
-                Log3 $hash->{NAME}, 3, "Extra Strength :: Downgrading strength extra to 'strong' for set $option.";
+            }
+            else {
+                Log3 $hash->{NAME}, 3,
+"Extra Strength :: Downgrading strength extra to 'strong' for set $option.";
                 $param[1] = "strong";
             }
         }
 
         # Handle normal brew or set defaults
-        if (not defined($param[0]) or $param[0] ne "current") {
+        if ( not defined( $param[0] ) or $param[0] ne "current" ) {
+
             # Get message parts
-            my %input = ("cups" => $param[0], "strength" => $param[1], "hotplate" => $param[2], "grinder" => $param[3]);
-            my %readingsValues = ( %input );
-            my $inputsDefined = 0;
+            my %input = (
+                "cups"     => $param[0],
+                "strength" => $param[1],
+                "hotplate" => $param[2],
+                "grinder"  => $param[3]
+            );
+            my %readingsValues = (%input);
+            my $inputsDefined  = 0;
 
-            for my $key (keys %input) {
+            for my $key ( keys %input ) {
+
                 # Translating input to message part.
-                $input{$key} = $optionToMessage->( $key, $input{$key} ) if defined($input{$key});
+                $input{$key} = $optionToMessage->( $key, $input{$key} )
+                  if defined( $input{$key} );
 
-                # Taking message part from readings if input didn't specifiy it (using "on" for "hotplate" as the reading would be missleading.
-                if (not defined($input{$key})) {
-                    $readingsValues{$key} = ($key eq "hotplate"
-                        ? (ReadingsVal($hash->{NAME}, "cups_single_mode", "") eq "yes" ? 0 : "on")
-                        : ReadingsVal($hash->{NAME}, $key, ""));
+# Taking message part from readings if input didn't specifiy it (using "on" for "hotplate" as the reading would be missleading.
+                if ( not defined( $input{$key} ) ) {
+                    $readingsValues{$key} = (
+                        $key eq "hotplate"
+                        ? (
+                            ReadingsVal(
+                                $hash->{NAME}, "cups_single_mode", ""
+                            ) eq "yes" ? 0 : "on"
+                          )
+                        : ReadingsVal( $hash->{NAME}, $key, "" )
+                    );
 
-                    $input{$key} = $optionToMessage->( $key, $readingsValues{$key} );
+                    $input{$key} =
+                      $optionToMessage->( $key, $readingsValues{$key} );
                 }
 
                 # Count if message part was retrieved
-                $inputsDefined++ if defined($input{$key});
+                $inputsDefined++ if defined( $input{$key} );
             }
 
-            if ($inputsDefined == 4) {
-                if ($option eq "defaults") {
+            if ( $inputsDefined == 4 ) {
+                if ( $option eq "defaults" ) {
                     $option = "adjust_defaults";
-                    $messagePart = $input{strength}.$input{cups}.$input{grinder}.$input{hotplate};
-                } else {
+                    $messagePart =
+                        $input{strength}
+                      . $input{cups}
+                      . $input{grinder}
+                      . $input{hotplate};
+                }
+                else {
                     $option = "brew_with_settings";
-                    $messagePart = $input{cups}.$input{strength}.$input{hotplate}.$input{grinder};
+                    $messagePart =
+                        $input{cups}
+                      . $input{strength}
+                      . $input{hotplate}
+                      . $input{grinder};
 
-                    UpdateReadings($hash,
+                    UpdateReadings(
+                        $hash,
                         sub($) {
                             my ($updateReading) = @_;
-                            for my $key (keys %readingsValues) { $updateReading->( $key, $readingsValues{$key} ) }
+                            for my $key ( keys %readingsValues ) {
+                                $updateReading->( $key, $readingsValues{$key} );
+                            }
                         }
                     );
                 }
             }
         }
 
-        # Aborting if option "defaults" was not properly prepared to "adjust_defaults".
+ # Aborting if option "defaults" was not properly prepared to "adjust_defaults".
         return undef if $option eq "defaults";
 
-    } elsif ($option =~ /^hotplate.*/) {
-        if (not defined($param[0])) {
-            $param[0] = ($option ne "hotplate_on_for_minutes" and ReadingsVal($hash->{NAME}, "hotplate", "") ne "off") ? "off" : "on";
+    }
+    elsif ( $option =~ /^hotplate.*/ ) {
+        if ( not defined( $param[0] ) ) {
+            $param[0] =
+              ( $option ne "hotplate_on_for_minutes"
+                  and ReadingsVal( $hash->{NAME}, "hotplate", "" ) ne "off" )
+              ? "off"
+              : "on";
         }
-        $option = $param[0] =~ /^(0|no|disable|off).*$/i ? "hotplate_off" : "hotplate_on_for_minutes";
+        $option =
+          $param[0] =~ /^(0|no|disable|off).*$/i
+          ? "hotplate_off"
+          : "hotplate_on_for_minutes";
         $messagePart = $optionToMessage->( $option, $param[0], $param[1] );
 
-    } else {
-        if (defined($param[0])) {
-            # Resetting "extra" strength mode when strength is updated.
-            delete $hash->{".extra_strength.enabled"} if ($option eq "strength" and $param[0] ne "extra" and $hash->{".extra_strength.enabled"});
+    }
+    else {
+        if ( defined( $param[0] ) ) {
 
-            # Eager updating strength, cups and grinder reading to avoid that widget updates are slower than starting a "brew".
-            UpdateReading($hash, $option, $param[0]) if ($option =~ /^(strength|cups|grinder)$/);
+            # Resetting "extra" strength mode when strength is updated.
+            delete $hash->{".extra_strength.enabled"}
+              if (  $option eq "strength"
+                and $param[0] ne "extra"
+                and $hash->{".extra_strength.enabled"} );
+
+# Eager updating strength, cups and grinder reading to avoid that widget updates are slower than starting a "brew".
+            UpdateReading( $hash, $option, $param[0] )
+              if ( $option =~ /^(strength|cups|grinder)$/ );
 
             # Aborting device update when strength is "extra".
-            return undef if ($option eq "strength" and $param[0] eq "extra");
+            return undef if ( $option eq "strength" and $param[0] eq "extra" );
 
-            # Aborting device update if grinder is not changed (every command sent to the coffee machine flips the grinder setting).
-            return undef if ($option eq "grinder" and $param[0] eq ReadingsVal($hash->{NAME}, "grinder", ""));
+# Aborting device update if grinder is not changed (every command sent to the coffee machine flips the grinder setting).
+            return undef
+              if (  $option eq "grinder"
+                and $param[0] eq ReadingsVal( $hash->{NAME}, "grinder", "" ) );
         }
 
         # Resetting internal states before executing "stop".
-        if ($option eq "stop" and ($param[0] // "") ne "no-reset") {
+        if ( $option eq "stop" and ( $param[0] // "" ) ne "no-reset" ) {
             ResetState($hash);
         }
 
@@ -814,46 +1026,54 @@ sub Set {
     }
 
     # Command execution
-    if (defined($commands{$option})) {
+    if ( defined( $commands{$option} ) ) {
         my $message = $commands{$option};
 
         # Replacing placeholders with value.
-        $message =~ s/#+/$messagePart/ if (defined($messagePart) and $messagePart =~ /^[a-f0-9]{2,}$/);
+        $message =~ s/#+/$messagePart/
+          if ( defined($messagePart) and $messagePart =~ /^[a-f0-9]{2,}$/ );
 
-        if ($message =~ /.*#.*/) {
-            return "Option $option: Unsupported params: ".join(" ", @param);
-        } else {
-            $hash->{".last_set_command"} = $option.(int(@param) ? " ".join(" ", @param) : "");
+        if ( $message =~ /.*#.*/ ) {
+            return "Option $option: Unsupported params: " . join( " ", @param );
+        }
+        else {
+            $hash->{".last_set_command"} =
+              $option . ( int(@param) ? " " . join( " ", @param ) : "" );
             $hash->{"PENDING_COMMAND"} = $hash->{".last_command"} = $message;
-            Log3 $hash->{NAME}, 4, "Connection :: Sending message: $message [".$hash->{".last_set_command"}."]";
+            Log3 $hash->{NAME}, 4, "Connection :: Sending message: $message ["
+              . $hash->{".last_set_command"} . "]";
 
-            WritePending($hash, ($option eq "info"));
+            WritePending( $hash, ( $option eq "info" ) );
         }
         return undef;
 
-    } elsif ($option eq "disconnect" or $option eq "reconnect") {
+    }
+    elsif ( $option eq "disconnect" or $option eq "reconnect" ) {
+
         # This option is primarily to test if reconnect works.
         main::DevIo_Disconnected($hash);
-        Connect($hash) if ($option eq "reconnect");
+        Connect($hash) if ( $option eq "reconnect" );
         return undef;
 
-    } elsif ($option ne "?" and $option ne "help") {
-        return "Unknown option: $option with params: ".join(" ", @param)
+    }
+    elsif ( $option ne "?" and $option ne "help" ) {
+        return "Unknown option: $option with params: " . join( " ", @param );
     }
 
-    my @strength = split(",", "weak,medium,strong,extra");
-    pop(@strength) if (not IsExtraStrengthModeAvailable($hash));
+    my @strength = split( ",", "weak,medium,strong,extra" );
+    pop(@strength) if ( not IsExtraStrengthModeAvailable($hash) );
 
-    return "Unknown argument $option, choose one of"
-        ." brew"
-        ." defaults"
-        ." reset:noArg"
-        ." stop:noArg"
-        ." strength:".join(",", @strength)
-        ." cups:slider,1,1,12"
-        ." grinder:enabled,disabled"
-        ." hotplate"
-        ." hotplate_on_for_minutes:slider,5,5,40";
+    return
+        "Unknown argument $option, choose one of" . " brew"
+      . " defaults"
+      . " reset:noArg"
+      . " stop:noArg"
+      . " strength:"
+      . join( ",", @strength )
+      . " cups:slider,1,1,12"
+      . " grinder:enabled,disabled"
+      . " hotplate"
+      . " hotplate_on_for_minutes:slider,5,5,40";
 }
 
 sub ResetState($) {
@@ -864,22 +1084,26 @@ sub ResetState($) {
 }
 
 sub Notify($$) {
-    my ($hash, $eventHash) = @_;
-    my $name = $hash->{NAME};
+    my ( $hash, $eventHash ) = @_;
+    my $name       = $hash->{NAME};
     my $senderName = $eventHash->{NAME};
 
-    # Return without any further action if the module is disabled or the event is not from this module or global.
-    return "" if (IsDisabled($name) or ($senderName ne $name and $senderName ne "global"));
+# Return without any further action if the module is disabled or the event is not from this module or global.
+    return ""
+      if ( IsDisabled($name)
+        or ( $senderName ne $name and $senderName ne "global" ) );
 
-    if (my $events = deviceEvents($eventHash, 1)) {
-        if ($senderName eq "global") {
-            ReadConfiguration($hash) if (grep(m/^(INITIALIZED|REREADCFG)$/, @{$events}));
-        } else {
-            for (@{$events}) {
+    if ( my $events = deviceEvents( $eventHash, 1 ) ) {
+        if ( $senderName eq "global" ) {
+            ReadConfiguration($hash)
+              if ( grep( m/^(INITIALIZED|REREADCFG)$/, @{$events} ) );
+        }
+        else {
+            for ( @{$events} ) {
                 if ($_) {
-                    ProcessBrewStateEvents($hash, $_);
-                    ProcessEventForExtraStrength($hash, $_);
-                    LogCommands($hash, $_);
+                    ProcessBrewStateEvents( $hash, $_ );
+                    ProcessEventForExtraStrength( $hash, $_ );
+                    LogCommands( $hash, $_ );
                 }
             }
         }
@@ -890,89 +1114,158 @@ sub ReadConfiguration($) {
     my ($hash) = @_;
 
     # Restoring extra strength
-    $hash->{".extra_strength.enabled"} = 1 if (ReadingsVal($hash->{NAME}, "strength", "") =~ /^extra.*/);
+    $hash->{".extra_strength.enabled"} = 1
+      if ( ReadingsVal( $hash->{NAME}, "strength", "" ) =~ /^extra.*/ );
 }
 
 sub LogCommands($$) {
-    my ($hash, $event) = @_;
+    my ( $hash, $event ) = @_;
 
-    if ($event =~ /^last_command_success:\s*(yes|no)\s*$/i and (my $command = ReadingsVal($hash->{NAME}, "last_command", 0))) {
-        my $message = ReadingsVal($hash->{NAME}, "last_command_message", "");
-        if ($1 eq "yes") {
-            Log3 $hash->{NAME}, 4, "Command :: Success [$command]; Message: $message";
-        } else {
-            Log3 $hash->{NAME}, 3, "Command :: Failed [$command]; Cause: $message";
+    if ( $event =~ /^last_command_success:\s*(yes|no)\s*$/i
+        and ( my $command = ReadingsVal( $hash->{NAME}, "last_command", 0 ) ) )
+    {
+        my $message = ReadingsVal( $hash->{NAME}, "last_command_message", "" );
+        if ( $1 eq "yes" ) {
+            Log3 $hash->{NAME}, 4,
+              "Command :: Success [$command]; Message: $message";
+        }
+        else {
+            Log3 $hash->{NAME}, 3,
+              "Command :: Failed [$command]; Cause: $message";
         }
     }
 }
 
 sub ProcessBrewStateEvents($$) {
-    my ($hash, $event) = @_;
+    my ( $hash, $event ) = @_;
 
-    # Setting "INITIATED_BREWING" when brewing was initiated by a command (and not by using the machine's buttons)
-    if ($event =~ /^last_command_success:\s*yes\s*$/i and ReadingsVal($hash->{NAME}, "last_command", 0) =~ /^brew.*/) {
+# Setting "INITIATED_BREWING" when brewing was initiated by a command (and not by using the machine's buttons)
+    if ( $event =~ /^last_command_success:\s*yes\s*$/i
+        and ReadingsVal( $hash->{NAME}, "last_command", 0 ) =~ /^brew.*/ )
+    {
         $hash->{"INITIATED_BREWING"} = 1;
-        $hash->{".brew-state"} = "brewing";
+        $hash->{".brew-state"}       = "brewing";
 
-    } elsif ($event =~ /^state:\s*(brewing|grinding)/) {
+    }
+    elsif ( $event =~ /^state:\s*(brewing|grinding)/ ) {
         $hash->{".brew-state"} = $1;
 
-    } elsif ($event =~ /^state:\s*done/) {
+    }
+    elsif ( $event =~ /^state:\s*done/ ) {
         ResetBrewState($hash);
 
-    } elsif ($event =~ /^state:\s*(.+)$/ and ($hash->{".brew-state"} // "") =~ /^(brewing|grinding)$/) {
-        Log3 $hash->{NAME}, 3, "Found state change from 'brewing' to '$1'. This looks like an abort, resetting all states to initial.";
+    }
+    elsif ( $event =~ /^state:\s*(.+)$/
+        and ( $hash->{".brew-state"} // "" ) =~ /^(brewing|grinding)$/ )
+    {
+        Log3 $hash->{NAME}, 3,
+"Found state change from 'brewing' to '$1'. This looks like an abort, resetting all states to initial.";
         ResetState($hash);
     }
 }
 
 sub ResetBrewState($) {
     my ($hash) = @_;
-    delete $hash->{".brew-state"} if defined($hash->{".brew-state"});
-    delete $hash->{"INITIATED_BREWING"} if defined($hash->{"INITIATED_BREWING"});
+    delete $hash->{".brew-state"} if defined( $hash->{".brew-state"} );
+    delete $hash->{"INITIATED_BREWING"}
+      if defined( $hash->{"INITIATED_BREWING"} );
 }
 
 sub ProcessEventForExtraStrength($$) {
-    my ($hash, $event) = @_;
+    my ( $hash, $event ) = @_;
 
-    if ($event =~ /^strength:\s*extra\s*$/) {
+    if ( $event =~ /^strength:\s*extra\s*$/ ) {
+
         # Listen to "set strength extra" and enable it if available.
-        if (not (EnableExtraStrengthMode($hash))) {
-            Log3 $hash->{NAME}, 3, "Extra-Strength :: Downgrading strength 'extra' to 'strong'";
-            fhem("sleep 0.1 fix-strength ; set ".$hash->{NAME}." strength strong");
+        if ( not( EnableExtraStrengthMode($hash) ) ) {
+            Log3 $hash->{NAME}, 3,
+              "Extra-Strength :: Downgrading strength 'extra' to 'strong'";
+            fhem(   "sleep 0.1 fix-strength ; set "
+                  . $hash->{NAME}
+                  . " strength strong" );
         }
 
-    } elsif ($event =~ /^state:\s*brewing/ and not $hash->{"INITIATED_BREWING"}) {
-        # Monitor event that brewing was started on the device without grinder and upgrade to 'extra' if configured in attributes.
-        if (ReadingsVal($hash->{NAME}, "grinder", "-") eq "disabled"
-            and (my $cups = int(ReadingsVal($hash->{NAME}, "cups", 0))) > 0
-            and (my $strength = ReadingsVal($hash->{NAME}, "strength", "")) eq AttrVal($hash->{NAME}, "strength-extra-start-on-device-strength", "off")
-            and EnableExtraStrengthMode($hash) ) {
+    }
+    elsif ( $event =~ /^state:\s*brewing/ and not $hash->{"INITIATED_BREWING"} )
+    {
+# Monitor event that brewing was started on the device without grinder and upgrade to 'extra' if configured in attributes.
+        if (
+            ReadingsVal( $hash->{NAME}, "grinder", "-" ) eq "disabled"
+            and ( my $cups = int( ReadingsVal( $hash->{NAME}, "cups", 0 ) ) ) >
+            0
+            and ( my $strength = ReadingsVal( $hash->{NAME}, "strength", "" ) )
+            eq AttrVal(
+                $hash->{NAME}, "strength-extra-start-on-device-strength",
+                "off"
+            )
+            and EnableExtraStrengthMode($hash)
+          )
+        {
 
-            Log3 $hash->{NAME}, 3, "Extra-Strength :: Upgrading brewing $cups cups started with disabled grinder and strength '$strength' to strength 'extra'.";
-            Set($hash, @{[ $hash->{NAME}, "stop" ]});
-            Set($hash, @{[ $hash->{NAME}, "brew", $cups, "extra" ]});
+            Log3 $hash->{NAME}, 3,
+"Extra-Strength :: Upgrading brewing $cups cups started with disabled grinder and strength '$strength' to strength 'extra'.";
+            Set( $hash, @{ [ $hash->{NAME}, "stop" ] } );
+            Set( $hash, @{ [ $hash->{NAME}, "brew", $cups, "extra" ] } );
         }
 
-    } elsif (($hash->{".extra_strength.enabled"} or $hash->{".extra_strength.phase-2"})) {
-        # Listen to "set strength ?" while in extra mode and revert it to extra shortly.
-        if ($event =~ /^strength:\s*([^\s]+)\s*$/) {
-            fhem("sleep 0.1 fix-strength ; set ".$hash->{NAME}." strength extra");
+    }
+    elsif (
+        (
+               $hash->{".extra_strength.enabled"}
+            or $hash->{".extra_strength.phase-2"}
+        )
+      )
+    {
+# Listen to "set strength ?" while in extra mode and revert it to extra shortly.
+        if ( $event =~ /^strength:\s*([^\s]+)\s*$/ ) {
+            fhem(   "sleep 0.1 fix-strength ; set "
+                  . $hash->{NAME}
+                  . " strength extra" );
 
-        } elsif ($event =~ /^state:\s*done/) {
+        }
+        elsif ( $event =~ /^state:\s*done/ ) {
+
             # Finishing first round (grinding & first brew are done here)
-            if ((my $delay = int($hash->{".extra_strength.pre_brew_phase_delay"} // 0)) > 0) {
-                InternalTimer(gettimeofday() + $delay, "SmarterCoffee::ExtraStrengthHandleBrewing", $hash, 0);
-            } else {
-                if (int($hash->{".extra_strength.original_desired_cups"} // 0) > 0) {
-                    Set($hash, @{[ $hash->{NAME}, "cups", $hash->{".extra_strength.original_desired_cups"} ]});
+            if (
+                (
+                    my $delay =
+                    int( $hash->{".extra_strength.pre_brew_phase_delay"} // 0 )
+                ) > 0
+              )
+            {
+                InternalTimer(
+                    gettimeofday() + $delay,
+                    "SmarterCoffee::ExtraStrengthHandleBrewing",
+                    $hash, 0
+                );
+            }
+            else {
+                if (
+                    int(
+                        $hash->{".extra_strength.original_desired_cups"} // 0
+                    ) > 0
+                  )
+                {
+                    Set(
+                        $hash,
+                        @{
+                            [
+                                $hash->{NAME}, "cups",
+                                $hash->{".extra_strength.original_desired_cups"}
+                            ]
+                        }
+                    );
                 }
                 ResetExtraStrengthMode($hash);
             }
 
-        } elsif ($event =~ /^state:\s*brewing/ and not $hash->{".extra_strength.phase-2"}) {
-            # Entering phase-2: Brewing after initial grinding at different settings.
-            $hash->{".extra_strength.phase-2"} = ExtraStrengthHandleBrewing($hash);
+        }
+        elsif ( $event =~ /^state:\s*brewing/
+            and not $hash->{".extra_strength.phase-2"} )
+        {
+       # Entering phase-2: Brewing after initial grinding at different settings.
+            $hash->{".extra_strength.phase-2"} =
+              ExtraStrengthHandleBrewing($hash);
         }
     }
 }
@@ -980,28 +1273,40 @@ sub ProcessEventForExtraStrength($$) {
 sub ExtraStrengthHandleBrewing($) {
     my ($hash) = @_;
     my @params = (
-        ReadingsVal($hash->{NAME}, "cups", "-"),
-        ReadingsVal($hash->{NAME}, "strength", "-"),
-        ReadingsVal($hash->{NAME}, "hotplate_on_for_minutes", (ReadingsVal($hash->{NAME}, "cups_single_mode", "") eq "yes" ? 0 : "on")),
+        ReadingsVal( $hash->{NAME}, "cups",     "-" ),
+        ReadingsVal( $hash->{NAME}, "strength", "-" ),
+        ReadingsVal(
+            $hash->{NAME},
+            "hotplate_on_for_minutes",
+            (
+                ReadingsVal( $hash->{NAME}, "cups_single_mode", "" ) eq "yes"
+                ? 0
+                : "on"
+            )
+        ),
         "disabled"
     );
 
-    if (TranslateParamsForExtraStrength($hash, \@params, "brew")) {
-        # Resetting brew state to ensure it doesn't interfere with stop command that runs with "no-reset" option.
+    if ( TranslateParamsForExtraStrength( $hash, \@params, "brew" ) ) {
+
+# Resetting brew state to ensure it doesn't interfere with stop command that runs with "no-reset" option.
         ResetBrewState($hash);
 
-        # Stopping brewing after initial grinding (skip stop if we are in phase-2 and came here due to pre-brew delay)
-        Set($hash, @{[ $hash->{NAME}, "stop", "no-reset" ]}) if not $hash->{".extra_strength.phase-2"};
+# Stopping brewing after initial grinding (skip stop if we are in phase-2 and came here due to pre-brew delay)
+        Set( $hash, @{ [ $hash->{NAME}, "stop", "no-reset" ] } )
+          if not $hash->{".extra_strength.phase-2"};
 
-        unshift(@params, "brew");
-        unshift(@params, $hash->{NAME});
+        unshift( @params, "brew" );
+        unshift( @params, $hash->{NAME} );
 
-        my $phase = int($hash->{".extra_strength.pre_brew_phase_delay"} // 0) > 0
-            ? "2 (pre brew)"
-            : "2";
-        Log3 $hash->{NAME}, 4, "Extra-Strength :: Phase $phase [set ".join(" ", @params)."]";
+        my $phase =
+          int( $hash->{".extra_strength.pre_brew_phase_delay"} // 0 ) > 0
+          ? "2 (pre brew)"
+          : "2";
+        Log3 $hash->{NAME}, 4,
+          "Extra-Strength :: Phase $phase [set " . join( " ", @params ) . "]";
 
-        Set($hash, @params);
+        Set( $hash, @params );
         return 1;
     }
 
@@ -1009,16 +1314,24 @@ sub ExtraStrengthHandleBrewing($) {
 }
 
 sub IsExtraStrengthModeAvailable($;$) {
-    my ($hash, $slient) = @_;
+    my ( $hash, $slient ) = @_;
 
-    my $extraPercent = AttrVal($hash->{NAME}, "strength-extra-percent", $strengthExtraDefaultPercent);
-    my $preBrew = int(AttrVal($hash->{NAME}, "strength-extra-pre-brew-cups", 1)) * int(AttrVal($hash->{NAME}, "strength-extra-pre-brew-delay-seconds", 0));
+    my $extraPercent = AttrVal( $hash->{NAME}, "strength-extra-percent",
+        $strengthExtraDefaultPercent );
+    my $preBrew =
+      int( AttrVal( $hash->{NAME}, "strength-extra-pre-brew-cups", 1 ) ) *
+      int(
+        AttrVal( $hash->{NAME}, "strength-extra-pre-brew-delay-seconds", 0 ) );
 
-    if ($extraPercent > 0 and ($extraPercent != 1 or $preBrew > 0) and $extraPercent < 2.5) {
+    if (    $extraPercent > 0
+        and ( $extraPercent != 1 or $preBrew > 0 )
+        and $extraPercent < 2.5 )
+    {
         return 1;
-    } else {
-        Log3 $hash->{NAME}, (($slient // 1) ? 5 : 3),
-            "Extra-Strength :: Strength 'extra' is disabled as [strength-extra-percent = $extraPercent] is out of range (0 < x < 2.5)";
+    }
+    else {
+        Log3 $hash->{NAME}, ( ( $slient // 1 ) ? 5 : 3 ),
+"Extra-Strength :: Strength 'extra' is disabled as [strength-extra-percent = $extraPercent] is out of range (0 < x < 2.5)";
         return 0;
     }
 }
@@ -1026,26 +1339,35 @@ sub IsExtraStrengthModeAvailable($;$) {
 sub EnableExtraStrengthMode($) {
     my ($hash) = @_;
 
-    return 1 if ($hash->{".extra_strength.enabled"});
+    return 1 if ( $hash->{".extra_strength.enabled"} );
 
-    if (IsExtraStrengthModeAvailable($hash, 0)) {
-        Log3 $hash->{NAME}, 4, "Extra-Strength :: Entering extra strength mode.";
+    if ( IsExtraStrengthModeAvailable( $hash, 0 ) ) {
+        Log3 $hash->{NAME}, 4,
+          "Extra-Strength :: Entering extra strength mode.";
         $hash->{".extra_strength.enabled"} = 1;
         return 1;
-    } else {
+    }
+    else {
         return 0;
     }
 }
 
 sub ResetExtraStrengthMode($;$) {
-    my ($hash, $partial) = @_;
+    my ( $hash, $partial ) = @_;
 
-    Log3 $hash->{NAME}, 4, ("Extra-Strength :: Resetting state to initial (partial: " . ($partial // 0) . ").");
+    Log3 $hash->{NAME}, 4,
+      (     "Extra-Strength :: Resetting state to initial (partial: "
+          . ( $partial // 0 )
+          . ")." );
     foreach my $key ( keys %{$hash} ) {
-        my $resetableKey = ($key =~ /^\.extra_strength\..+$/ and $key ne ".extra_strength.enabled");
+        my $resetableKey = ( $key =~ /^\.extra_strength\..+$/
+              and $key ne ".extra_strength.enabled" );
 
-        if (($partial // 0) and $resetableKey) {
-            $resetableKey = (not $key =~ /.+\.(original_desired_cups|desired_cups|pre_brew_phase_delay|phase-2).+$/);
+        if ( ( $partial // 0 ) and $resetableKey ) {
+            $resetableKey = (
+                not $key =~
+/.+\.(original_desired_cups|desired_cups|pre_brew_phase_delay|phase-2).+$/
+            );
         }
 
         if ($resetableKey) {
@@ -1056,44 +1378,77 @@ sub ResetExtraStrengthMode($;$) {
 }
 
 sub TranslateParamsForExtraStrength($$$) {
-    my ($hash, $params, $phase) = @_;
+    my ( $hash, $params, $phase ) = @_;
 
-    return 0 if (not (EnableExtraStrengthMode($hash)));
+    return 0 if ( not( EnableExtraStrengthMode($hash) ) );
 
-    if ($phase eq "grind") {
-        my $extraPercent = AttrVal($hash->{NAME}, "strength-extra-percent", $strengthExtraDefaultPercent);
+    if ( $phase eq "grind" ) {
+        my $extraPercent = AttrVal( $hash->{NAME}, "strength-extra-percent",
+            $strengthExtraDefaultPercent );
 
-        my @strengths = ("weak", "medium", "strong");
-        my @weights = split(/\s+/, AttrVal($hash->{NAME}, "strength-coffee-weights", $strengthDefaultWeights));
-        while (int(@weights) < 3) { push(@weights, (int(@weights) ? $weights[int(@weights) - 1] : 4.3)) }
+        my @strengths = ( "weak", "medium", "strong" );
+        my @weights = split(
+            /\s+/,
+            AttrVal(
+                $hash->{NAME}, "strength-coffee-weights",
+                $strengthDefaultWeights
+            )
+        );
+        while ( int(@weights) < 3 ) {
+            push( @weights,
+                ( int(@weights) ? $weights[ int(@weights) - 1 ] : 4.3 ) );
+        }
 
-        Log3 $hash->{NAME}, 4, "Extra-Strength :: Reference weights: ".join(" ", @weights)." (".join(" ", @strengths).")";
+        Log3 $hash->{NAME}, 4,
+            "Extra-Strength :: Reference weights: "
+          . join( " ", @weights ) . " ("
+          . join( " ", @strengths ) . ")";
 
-        my $desiredCups = $params->[0] // ReadingsVal($hash->{NAME}, "cups", 0);
-        my $maxCups = ReadingsVal($hash->{NAME}, "cups_max", $desiredCups);
-        $desiredCups = $maxCups if ($desiredCups > $maxCups);
+        my $desiredCups = $params->[0]
+          // ReadingsVal( $hash->{NAME}, "cups", 0 );
+        my $maxCups = ReadingsVal( $hash->{NAME}, "cups_max", $desiredCups );
+        $desiredCups = $maxCups if ( $desiredCups > $maxCups );
 
-        my %grind = ( "cups" => undef, "desired" => $desiredCups, "strength" => undef, "delta" => undef, "error" => undef );
+        my %grind = (
+            "cups"     => undef,
+            "desired"  => $desiredCups,
+            "strength" => undef,
+            "delta"    => undef,
+            "error"    => undef
+        );
 
-        while ($desiredCups > 0 and not defined($grind{cups})) {
+        while ( $desiredCups > 0 and not defined( $grind{cups} ) ) {
             my $targetWeight = $desiredCups * $weights[2] * $extraPercent;
 
-            for (my $i = 0; $i < int(@weights); $i++) {
-                if (($weights[$i] // -1) > 0 and $targetWeight > 0) {
-                    my $cups = int($targetWeight / $weights[$i]) + ($extraPercent > 1 ? 1 : 0);
+            for ( my $i = 0 ; $i < int(@weights) ; $i++ ) {
+                if ( ( $weights[$i] // -1 ) > 0 and $targetWeight > 0 ) {
+                    my $cups = int( $targetWeight / $weights[$i] ) +
+                      ( $extraPercent > 1 ? 1 : 0 );
                     my $weight = $cups * $weights[$i];
-                    my $delta = ($targetWeight > $weight ? ($targetWeight - $weight) : ($weight - $targetWeight));
-                    my $error = int((1 - (($targetWeight - $delta) / $targetWeight)) * 100);
+                    my $delta =
+                      ( $targetWeight > $weight
+                        ? ( $targetWeight - $weight )
+                        : ( $weight - $targetWeight ) );
+                    my $error = int(
+                        ( 1 - ( ( $targetWeight - $delta ) / $targetWeight ) )
+                        * 100 );
 
                     Log3 $hash->{NAME}, 4,
-                        "Extra-Strength :: GC: $cups (".$strengths[$i]."), DC: $desiredCups, D: $delta (e:$error%), W: $weight, T: $targetWeight";
+                        "Extra-Strength :: GC: $cups ("
+                      . $strengths[$i]
+                      . "), DC: $desiredCups, D: $delta (e:$error%), W: $weight, T: $targetWeight";
 
-                    if ($cups <= $maxCups and (not defined($grind{delta}) or $grind{delta} > $delta)) {
-                        $grind{desired} = $desiredCups;
-                        $grind{cups} = $cups;
-                        $grind{delta} = $delta;
+                    if (
+                        $cups <= $maxCups
+                        and ( not defined( $grind{delta} )
+                            or $grind{delta} > $delta )
+                      )
+                    {
+                        $grind{desired}  = $desiredCups;
+                        $grind{cups}     = $cups;
+                        $grind{delta}    = $delta;
                         $grind{strength} = $strengths[$i];
-                        $grind{error} = $error;
+                        $grind{error}    = $error;
                     }
                 }
             }
@@ -1101,34 +1456,47 @@ sub TranslateParamsForExtraStrength($$$) {
             $desiredCups--;
         }
 
-        if (defined($grind{cups})) {
+        if ( defined( $grind{cups} ) ) {
             $hash->{".extra_strength.original_desired_cups"} = $grind{desired};
-            $hash->{".extra_strength.desired_cups"} = $grind{desired};
-            $hash->{".extra_strength.error_rate"} = $grind{error};
-            $params->[0] = $grind{cups};
-            $params->[1] = $grind{strength};
+            $hash->{".extra_strength.desired_cups"}          = $grind{desired};
+            $hash->{".extra_strength.error_rate"}            = $grind{error};
+            $params->[0]                                     = $grind{cups};
+            $params->[1]                                     = $grind{strength};
 
             return 1;
-        } else {
-            Log3 $hash->{NAME}, 2, "Extra-Strength :: Failed calculating extra strength (not enough water?). Ordinary coffee strength will be applied.";
+        }
+        else {
+            Log3 $hash->{NAME}, 2,
+"Extra-Strength :: Failed calculating extra strength (not enough water?). Ordinary coffee strength will be applied.";
         }
 
-    } elsif ($phase eq "brew" and defined($hash->{".extra_strength.desired_cups"})) {
-        my ($preBrewCups, $preBrewDelay) = (
-            int(AttrVal($hash->{NAME}, "strength-extra-pre-brew-cups", 1)),
-            int(AttrVal($hash->{NAME}, "strength-extra-pre-brew-delay-seconds", 0))
+    }
+    elsif ( $phase eq "brew"
+        and defined( $hash->{".extra_strength.desired_cups"} ) )
+    {
+        my ( $preBrewCups, $preBrewDelay ) = (
+            int( AttrVal( $hash->{NAME}, "strength-extra-pre-brew-cups", 1 ) ),
+            int(
+                AttrVal(
+                    $hash->{NAME}, "strength-extra-pre-brew-delay-seconds",
+                    0
+                )
+            )
         );
 
-        if ($preBrewCups > 0 and $preBrewDelay > 0
+        if (    $preBrewCups > 0
+            and $preBrewDelay > 0
             and $preBrewCups < $hash->{".extra_strength.desired_cups"}
-            and not $hash->{".extra_strength.pre_brew_phase_delay"}) {
+            and not $hash->{".extra_strength.pre_brew_phase_delay"} )
+        {
 
             $hash->{".extra_strength.pre_brew_phase_delay"} = $preBrewDelay;
             $hash->{".extra_strength.desired_cups"} -= $preBrewCups;
             $params->[0] = $preBrewCups;
-        } else {
+        }
+        else {
             $params->[0] = $hash->{".extra_strength.desired_cups"};
-            ResetExtraStrengthMode($hash, 1);
+            ResetExtraStrengthMode( $hash, 1 );
         }
 
         return 1;
@@ -1138,84 +1506,101 @@ sub TranslateParamsForExtraStrength($$$) {
 }
 
 sub UpdateReading($$$) {
-    my ($hash, $name, $value) = @_;
-    UpdateReadings($hash, sub($) { ($_[0])->( $name, $value ) });
+    my ( $hash, $name, $value ) = @_;
+    UpdateReadings( $hash, sub($) { ( $_[0] )->( $name, $value ) } );
 }
 
 sub UpdateReadings($$;$) {
-    my ($hash, $callback, $forceUpdate) = @_;
+    my ( $hash, $callback, $forceUpdate ) = @_;
 
-    $forceUpdate = (($forceUpdate // 0)
-        or defined(AttrVal($hash->{NAME}, "event-on-update-reading", undef))
-        or defined(AttrVal($hash->{NAME}, "event-on-change-reading", undef)));
+    $forceUpdate = (
+        ( $forceUpdate // 0 )
+          or
+          defined( AttrVal( $hash->{NAME}, "event-on-update-reading", undef ) )
+          or
+          defined( AttrVal( $hash->{NAME}, "event-on-change-reading", undef ) )
+    );
 
     my $updated = 0;
     my $updater = sub {
-        my ($name, $value) = @_;
-        return if not (defined($name) and defined($value));
+        my ( $name, $value ) = @_;
+        return if not( defined($name) and defined($value) );
 
-        my $changed = ReadingsVal($hash->{NAME}, $name, "##undefined") ne $value;
-        if ($changed or $forceUpdate) {
-            readingsBulkUpdate($hash, $name, $value);
+        my $changed =
+          ReadingsVal( $hash->{NAME}, $name, "##undefined" ) ne $value;
+        if ( $changed or $forceUpdate ) {
+            readingsBulkUpdate( $hash, $name, $value );
             $updated = 1 if ($changed);
         }
 
-        $updated = 1 if ($name eq "state" and ReadingsVal($name,'state','none') ne $value);
+        $updated = 1
+          if ( $name eq "state"
+            and ReadingsVal( $name, 'state', 'none' ) ne $value );
     };
 
     readingsBeginUpdate($hash);
-    $callback->( $updater );
-    readingsEndUpdate($hash, ($updated or $forceUpdate));
+    $callback->($updater);
+    readingsEndUpdate( $hash, ( $updated or $forceUpdate ) );
 }
 
 sub RunDiscoveryProcess($;$) {
-    my ($hash, $skipConnect) = @_;
+    my ( $hash, $skipConnect ) = @_;
 
-    if (Discover($hash) and not $skipConnect) {
+    if ( Discover($hash) and not $skipConnect ) {
         Connect($hash);
     }
 
-    InternalTimer(gettimeofday() + $discoveryInterval, "SmarterCoffee::RunDiscoveryProcess", $hash, 0);
+    InternalTimer(
+        gettimeofday() + $discoveryInterval,
+        "SmarterCoffee::RunDiscoveryProcess",
+        $hash, 0
+    );
 }
 
 sub InetSocketAddressString($) {
-    my ($sport, $inetAddress) = sockaddr_in($_[0]);
-    return inet_ntoa($inetAddress).":$sport"
+    my ( $sport, $inetAddress ) = sockaddr_in( $_[0] );
+    return inet_ntoa($inetAddress) . ":$sport";
 }
 
 sub Discover($) {
     my ($hash) = @_;
 
-    my $existingDeviceName = ($hash->{DeviceName} // "");
-    my $broadcastAddress = sockaddr_in($port, INADDR_BROADCAST);
+    my $existingDeviceName = ( $hash->{DeviceName} // "" );
+    my $broadcastAddress = sockaddr_in( $port, INADDR_BROADCAST );
 
     Log3 $hash->{NAME}, 4,
-        "Discovery :: Broadcasting discovery request to ".InetSocketAddressString($broadcastAddress)." (already discovered: $existingDeviceName)";
+        "Discovery :: Broadcasting discovery request to "
+      . InetSocketAddressString($broadcastAddress)
+      . " (already discovered: $existingDeviceName)";
 
-    socket(my $socket, AF_INET, SOCK_DGRAM, getprotobyname('udp'));
-    setsockopt($socket, SOL_SOCKET, SO_BROADCAST, 1);
-    send($socket, 'd~', 0, $broadcastAddress);
-    my $wait = IO::Select->new( $socket );
+    socket( my $socket, AF_INET, SOCK_DGRAM, getprotobyname('udp') );
+    setsockopt( $socket, SOL_SOCKET, SO_BROADCAST, 1 );
+    send( $socket, 'd~', 0, $broadcastAddress );
+    my $wait = IO::Select->new($socket);
 
-    while ($wait->can_read( 10 )) {
-        my $deviceAddress = recv($socket, my $message, 128, 0);
+    while ( $wait->can_read(10) ) {
+        my $deviceAddress = recv( $socket, my $message, 128, 0 );
         my $inetSocketAddress = InetSocketAddressString($deviceAddress);
 
-        $message = unpack('H*', $message);
+        $message = unpack( 'H*', $message );
 
-        Log3 $hash->{NAME}, 4, "Discovery :: Received message $message from $inetSocketAddress";
+        Log3 $hash->{NAME}, 4,
+          "Discovery :: Received message $message from $inetSocketAddress";
 
-        if ($message =~ /^65.*7e.*/ and ParseMessage($hash, $message)) {
-            my ($sport, $inetAddress) = sockaddr_in($deviceAddress);
+        if ( $message =~ /^65.*7e.*/ and ParseMessage( $hash, $message ) ) {
+            my ( $sport, $inetAddress ) = sockaddr_in($deviceAddress);
 
-            if (my ($hostname) = gethostbyaddr($inetAddress, AF_INET)) {
-                $hash->{DeviceName} = $hostname.":$sport";
-            } else {
+            if ( my ($hostname) = gethostbyaddr( $inetAddress, AF_INET ) ) {
+                $hash->{DeviceName} = $hostname . ":$sport";
+            }
+            else {
                 $hash->{DeviceName} = $inetSocketAddress;
             }
 
-            if ($existingDeviceName ne $hash->{DeviceName}) {
-                Log3 $hash->{NAME}, 3, "Discovery :: Discovered smarter coffee machine (message=$message): ".$hash->{DeviceName};
+            if ( $existingDeviceName ne $hash->{DeviceName} ) {
+                Log3 $hash->{NAME}, 3,
+"Discovery :: Discovered smarter coffee machine (message=$message): "
+                  . $hash->{DeviceName};
             }
 
             last;
@@ -1224,12 +1609,17 @@ sub Discover($) {
 
     close $socket;
 
-    if (!defined($hash->{DeviceName})) {
-        my $recommendation = "Recommendation: Specify <IP address or hostname> in fhem config at: "
-            ."'define ".$hash->{NAME}." SmarterCoffee <IP address or hostname>' or check network / coffee machine.";
-        Log3 $hash->{NAME}, 2, "Discovery :: Failed discovering smarter coffee machine. $recommendation";
+    if ( !defined( $hash->{DeviceName} ) ) {
+        my $recommendation =
+          "Recommendation: Specify <IP address or hostname> in fhem config at: "
+          . "'define "
+          . $hash->{NAME}
+          . " SmarterCoffee <IP address or hostname>' or check network / coffee machine.";
+        Log3 $hash->{NAME}, 2,
+"Discovery :: Failed discovering smarter coffee machine. $recommendation";
         return 0;
-    } else {
+    }
+    else {
         return $existingDeviceName ne $hash->{DeviceName};
     }
 }
@@ -1317,39 +1707,43 @@ my $SmarterCoffee_StatusIconSVG = <<XML;
 XML
 
 sub GetDevStateIcon {
-    my ($name, $colors) = @_;
+    my ( $name, $colors ) = @_;
 
-    my ($state, $icon) = (Value($name), $SmarterCoffee_StatusIconSVG);
+    my ( $state, $icon ) = ( Value($name), $SmarterCoffee_StatusIconSVG );
 
-    my $noWater = (ReadingsVal($name, "water", "none") eq "none" and $state eq "maintenance");
-    my $waterLevel = ReadingsVal($name, "water_level", "0");
+    my $noWater = ( ReadingsVal( $name, "water", "none" ) eq "none"
+          and $state eq "maintenance" );
+    my $waterLevel = ReadingsVal( $name, "water_level", "0" );
 
-    $state = "brewing" if ($state eq "grinding");
+    $state = "brewing" if ( $state eq "grinding" );
 
-    $icon =~ s/(name="ready" opacity)="1"/$1="0"/g if $state ne "ready";
+    $icon =~ s/(name="ready" opacity)="1"/$1="0"/g   if $state ne "ready";
     $icon =~ s/(name="brewing" opacity)="1"/$1="0"/g if $state ne "brewing";
-    $icon =~ s/(name="coffee-level" opacity)="1"/$1="0"/g if ($state ne "brewing" and $state ne "done");
-    $icon =~ s/(name="(carafe|coffee-level)" opacity)="1"/$1="0"/g if (ReadingsVal($name, "carafe", "present") ne "present" or $noWater);
-    $icon =~ s/(name="heating" opacity)="1"/$1="0"/g if ReadingsVal($name, "hotplate", "off") ne "on";
+    $icon =~ s/(name="coffee-level" opacity)="1"/$1="0"/g
+      if ( $state ne "brewing" and $state ne "done" );
+    $icon =~ s/(name="(carafe|coffee-level)" opacity)="1"/$1="0"/g
+      if ( ReadingsVal( $name, "carafe", "present" ) ne "present" or $noWater );
+    $icon =~ s/(name="heating" opacity)="1"/$1="0"/g
+      if ReadingsVal( $name, "hotplate", "off" ) ne "on";
 
     $icon =~ s/(name="water-level.*" opacity)="1"/$1="0"/g;
     $icon =~ s/(name="water-level-$waterLevel" opacity)="0"/$1="1"/;
     $icon =~ s/(name="no-water" opacity)="0"/$1="1"/ if $noWater;
 
     # Adjusting the icon color
-    my @stateColors = split(/\s+/, ($colors // ""));
-    for (my $i = 0; $i < int(@stateColors); $i++) {
-        $stateColors[$i] = undef if ($stateColors[$i] =~ /^[^#a-z0].*/i);
+    my @stateColors = split( /\s+/, ( $colors // "" ) );
+    for ( my $i = 0 ; $i < int(@stateColors) ; $i++ ) {
+        $stateColors[$i] = undef if ( $stateColors[$i] =~ /^[^#a-z0].*/i );
     }
 
     my %cm = (
-        "default" => ($stateColors[0] // "#7b7b7b"),
-        "ready"   => ($stateColors[1] // "green"),
-        "brewing" => ($stateColors[2] // "chocolate"),
-        "done"    => ($stateColors[3] // "#336699"),
+        "default" => ( $stateColors[0] // "#7b7b7b" ),
+        "ready"   => ( $stateColors[1] // "green" ),
+        "brewing" => ( $stateColors[2] // "chocolate" ),
+        "done"    => ( $stateColors[3] // "#336699" ),
     );
 
-    if (my $stateColor = ($cm{$state} ? $cm{$state} : $cm{default})) {
+    if ( my $stateColor = ( $cm{$state} ? $cm{$state} : $cm{default} ) ) {
         $icon =~ s/(stroke|fill):#000000/$1:$stateColor/g;
     }
 
