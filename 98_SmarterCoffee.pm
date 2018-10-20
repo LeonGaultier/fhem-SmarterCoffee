@@ -689,6 +689,8 @@ sub Define($$) {
           if ( AttrVal( $name, 'event-on-change-reading', 'none' ) eq 'none' );
         CommandAttr( undef, $name . ' event-on-update-reading last_command.*' )
           if ( AttrVal( $name, 'event-on-update-reading', 'none' ) eq 'none' );
+        CommandAttr( undef, $name . ' devioLoglevel 4' )
+          if ( AttrVal( $name, 'devioLoglevel', 'none' ) eq 'none' );
     }
 
     CommandAttr( undef,
