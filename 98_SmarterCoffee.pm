@@ -551,7 +551,7 @@ sub Connect($) {
             $hash->{DeviceName} .= ":$port";
         }
 
-        main::main::DevIo_CloseDev($hash) if main::DevIo_IsOpen($hash);
+        main::DevIo_CloseDev($hash) if main::DevIo_IsOpen($hash);
         delete $hash->{DevIoJustClosed}   if ( $hash->{DevIoJustClosed} );
 
         return OpenIfRequiredAndWritePending( $hash, $isNewConnection );
