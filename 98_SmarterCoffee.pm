@@ -105,48 +105,13 @@
 #
 #############################################################
 
-package main;
-
-use strict;
-use warnings;
-
-my $version = "1.0.2";
-
-sub SmarterCoffee_Initialize($) {
-    my ($hash) = @_;
-
-    $hash->{DefFn}    = 'SmarterCoffee::Define';
-    $hash->{UndefFn}  = 'SmarterCoffee::Undefine';
-    $hash->{GetFn}    = 'SmarterCoffee::Get';
-    $hash->{SetFn}    = 'SmarterCoffee::Set';
-    $hash->{ReadFn}   = 'SmarterCoffee::Read';
-    $hash->{ReadyFn}  = 'SmarterCoffee::OpenIfRequiredAndWritePending';
-    $hash->{NotifyFn} = 'SmarterCoffee::Notify';
-    $hash->{AttrFn}   = 'SmarterCoffee::Attr';
-
-    $hash->{AttrList} = ""
-      . "default-hotplate-on-for-minutes "
-      . "ignore-max-cups "
-      . "set-on-brews-coffee "
-      . "strength-coffee-weights "
-      . "strength-extra-percent "
-      . "strength-extra-pre-brew-cups "
-      . "strength-extra-pre-brew-delay-seconds "
-      . "strength-extra-start-on-device-strength:off,weak,medium,strong "
-      . "devioLoglevel:0,1,2,3,4,5 "
-      . $readingFnAttributes;
-
-    foreach my $d ( sort keys %{ $modules{SmarterCoffee}{defptr} } ) {
-        my $hash = $modules{SmarterCoffee}{defptr}{$d};
-        $hash->{VERSION} = $version;
-    }
-}
-
-package SmarterCoffee;
+package FHEM::SmarterCoffee;
 
 use strict;
 use warnings;
 use POSIX;
+use utf8;
+use FHEM::Meta;
 
 use GPUtils qw(:all)
   ;    # wird für den Import der FHEM Funktionen aus der fhem.pl benötigt
@@ -157,10 +122,13 @@ use IO::Select;
 
 use DevIo;
 
-#use HttpUtils;
+our $VERSION = 'v1.0.3';
 
 ## Import der FHEM Funktionen
+#-- Run before package compilation
 BEGIN {
+
+    # Import from main context
     GP_Import(
         qw(readingsSingleUpdate
           readingsBulkUpdate
@@ -170,6 +138,7 @@ BEGIN {
           defs
           modules
           Log3
+          readingFnAttributes
           AttrVal
           ReadingsVal
           ReadingsNum
@@ -185,6 +154,28 @@ BEGIN {
           fhem)
     );
 }
+
+# _Export - Export references to main context using a different naming schema
+sub _Export {
+    no strict qw/refs/;    ## no critic
+    my $pkg  = caller(0);
+    my $main = $pkg;
+    $main =~ s/^(?:.+::)?([^:]+)$/main::$1\_/g;
+    foreach (@_) {
+        *{ $main . $_ } = *{ $pkg . '::' . $_ };
+    }
+}
+
+#-- Export to main context with different name
+_Export(
+    qw(
+      Initialize
+      GetDevStateIcon
+      ExtraStrengthHandleBrewing
+      WritePending
+      RunDiscoveryProcess
+      )
+);
 
 my $port                        = 2081;
 my $discoveryInterval           = 60 * 15;
@@ -562,7 +553,7 @@ sub Connect($) {
 sub OpenIfRequiredAndWritePending($;$) {
     my ( $hash, $initial ) = @_;
     return main::DevIo_OpenDev( $hash, ( $initial ? 0 : 1 ),
-        "SmarterCoffee::WritePending" );
+        "SmarterCoffee_WritePending" );
 }
 
 sub HandleInitialConnectState($) {
@@ -669,9 +660,43 @@ sub Read($;$) {
     return 1;
 }
 
+sub Initialize($) {
+    my ($hash) = @_;
+
+    $hash->{DefFn}    = 'FHEM::SmarterCoffee::Define';
+    $hash->{UndefFn}  = 'FHEM::SmarterCoffee::Undefine';
+    $hash->{GetFn}    = 'FHEM::SmarterCoffee::Get';
+    $hash->{SetFn}    = 'FHEM::SmarterCoffee::Set';
+    $hash->{ReadFn}   = 'FHEM::SmarterCoffee::Read';
+    $hash->{ReadyFn}  = 'FHEM::SmarterCoffee::OpenIfRequiredAndWritePending';
+    $hash->{NotifyFn} = 'FHEM::SmarterCoffee::Notify';
+    $hash->{AttrFn}   = 'FHEM::SmarterCoffee::Attr';
+
+    $hash->{AttrList} = ""
+      . "default-hotplate-on-for-minutes "
+      . "ignore-max-cups "
+      . "set-on-brews-coffee "
+      . "strength-coffee-weights "
+      . "strength-extra-percent "
+      . "strength-extra-pre-brew-cups "
+      . "strength-extra-pre-brew-delay-seconds "
+      . "strength-extra-start-on-device-strength:off,weak,medium,strong "
+      . "devioLoglevel:0,1,2,3,4,5 "
+      . $readingFnAttributes;
+
+    foreach my $d ( sort keys %{ $modules{SmarterCoffee}{defptr} } ) {
+        my $hash = $modules{SmarterCoffee}{defptr}{$d};
+        $hash->{VERSION} = $VERSION;
+    }
+    
+    return FHEM::Meta::InitMod( __FILE__, $hash );
+}
+
 sub Define($$) {
     my ( $hash, $def ) = @_;
+    
     my @param = split( '[ \t]+', $def );
+    return $@ unless ( FHEM::Meta::SetInternals($hash) );
     my $name = $hash->{NAME};
 
     # set default settings on first define
@@ -696,12 +721,12 @@ sub Define($$) {
     }
 
     CommandAttr( undef,
-        $name . 'devStateIcon { SmarterCoffee::GetDevStateIcon($name) }' )
+        $name . 'devStateIcon { SmarterCoffee_GetDevStateIcon($name) }' )
       if ( AttrVal( $name, 'devStateIcon', 'none' ) eq 'none'
         or AttrVal( $name, 'devStateIcon', 'none' ) eq
         '{ SmarterCoffee_GetDevStateIcon($name) }' );
 
-    $hash->{VERSION} = $version;
+    $hash->{VERSION} = $VERSION;
     if ( int(@param) < 3 ) {
         $hash->{AUTO_DETECT} = 1;
     }
@@ -1239,7 +1264,7 @@ sub ProcessEventForExtraStrength($$) {
             {
                 InternalTimer(
                     gettimeofday() + $delay,
-                    "SmarterCoffee::ExtraStrengthHandleBrewing",
+                    "SmarterCoffee_ExtraStrengthHandleBrewing",
                     $hash, 0
                 );
             }
@@ -1556,7 +1581,7 @@ sub RunDiscoveryProcess($;$) {
 
     InternalTimer(
         gettimeofday() + $discoveryInterval,
-        "SmarterCoffee::RunDiscoveryProcess",
+        "SmarterCoffee_RunDiscoveryProcess",
         $hash, 0
     );
 }
@@ -1765,6 +1790,7 @@ sub GetDevStateIcon {
 =pod
 =item device
 =item summary Controls a Wi-Fi Smarter Coffee machine via network connection
+
 =begin html
 
 <a name="SmarterCoffee"></a>
@@ -1934,14 +1960,14 @@ sub GetDevStateIcon {
 <b>Attributes</b><br>
 <ul>
     <li>
-        <code>attr &lt;name&gt; devStateIcon { SmarterCoffee::GetDevStateIcon($name) }</code>
+        <code>attr &lt;name&gt; devStateIcon { SmarterCoffee_GetDevStateIcon($name) }</code>
         <br><br>
-        The function <code>SmarterCoffee::GetDevStateIcon($name[, "...colors..."])</code> renders a custom dev state icon that displays
+        The function <code>SmarterCoffee_GetDevStateIcon($name[, "...colors..."])</code> renders a custom dev state icon that displays
         the machine states (ready, brewing, done) and shows information on carafe, hotplate and water level.
         <br><br>
         The icon is monochrome using a default color that may change to highlight states: ready, brewing, done.
-        Built-in colors can be adjusted with the second parameter of <code>SmarterCoffee::GetDevStateIcon</code>.<br>
-        E.g. using "<code>attr &lt;name&gt; devStateIcon { SmarterCoffee::GetDevStateIcon($name, '#7b7b7b green chocolate #336699' }</code>"
+        Built-in colors can be adjusted with the second parameter of <code>SmarterCoffee_GetDevStateIcon</code>.<br>
+        E.g. using "<code>attr &lt;name&gt; devStateIcon { SmarterCoffee_GetDevStateIcon($name, '#7b7b7b green chocolate #336699' }</code>"
         sets colors for default, ready, brewing and done.
         <br><br>
         Colors are specified as HTML color values delimited by whitespace using a fixed order of "default ready brewing done".
@@ -2023,5 +2049,46 @@ sub GetDevStateIcon {
 </ul>
 
 =end html
+
+=for :application/json;q=META.json 98_SmarterCoffee.pm
+{
+  "abstract": "Controls a Wi-Fi Smarter Coffee machine via network connection",
+  "x_lang": {
+    "de": {
+      "abstract": "Steuert eine Wi-Fi smarte Kaffeemaschine über die Netzwerkverbindung"
+    }
+  },
+  "keywords": [
+    "fhem-mod-device",
+    "fhem-core",
+    "Coffee"
+  ],
+  "release_status": "under develop",
+  "license": "GPL_2",
+  "author": [
+    "Marko Oldenburg <leongaultier@gmail.com>"
+  ],
+  "x_fhem_maintainer": [
+    "CoolTux"
+  ],
+  "x_fhem_maintainer_github": [
+    "LeonGaultier"
+  ],
+  "prereqs": {
+    "runtime": {
+      "requires": {
+        "FHEM": 5.00918799,
+        "perl": 5.016, 
+        "Meta": 0,
+        "Date::Parse": 0
+      },
+      "recommends": {
+      },
+      "suggests": {
+      }
+    }
+  }
+}
+=end :application/json;q=META.json
 
 =cut
