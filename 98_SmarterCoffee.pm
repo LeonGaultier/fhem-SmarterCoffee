@@ -599,7 +599,7 @@ sub WritePending {
 
         # Processing pending commands
         if ( ( $hash->{INVALID_DEVICE} // "0" ) eq "1" ) {
-            readingsSingleUpdate( $hash, 'state', 'invalid', 0 );
+            readingsSingleUpdate( $hash, 'state', 'invalid', 1 );
         }
         else {
             if ($pending) {
