@@ -543,7 +543,7 @@ sub Connect($) {
         }
 
         main::DevIo_CloseDev($hash) if main::DevIo_IsOpen($hash);
-        delete $hash->{DevIoJustClosed}   if ( $hash->{DevIoJustClosed} );
+        delete $hash->{DevIoJustClosed} if ( $hash->{DevIoJustClosed} );
 
         return OpenIfRequiredAndWritePending( $hash, $isNewConnection );
     }
@@ -688,13 +688,13 @@ sub Initialize($) {
         my $hash = $modules{SmarterCoffee}{defptr}{$d};
         $hash->{VERSION} = $VERSION;
     }
-    
+
     return FHEM::Meta::InitMod( __FILE__, $hash );
 }
 
 sub Define($$) {
     my ( $hash, $def ) = @_;
-    
+
     my @param = split( '[ \t]+', $def );
     return $@ unless ( FHEM::Meta::SetInternals($hash) );
     my $name = $hash->{NAME};
@@ -1454,10 +1454,11 @@ sub TranslateParamsForExtraStrength($$$) {
                     my $cups = int( $targetWeight / $weights[$i] ) +
                       ( $extraPercent > 1 ? 1 : 0 );
                     my $weight = $cups * $weights[$i];
-                    my $delta =
-                      ( $targetWeight > $weight
+                    my $delta  = (
+                        $targetWeight > $weight
                         ? ( $targetWeight - $weight )
-                        : ( $weight - $targetWeight ) );
+                        : ( $weight - $targetWeight )
+                    );
                     my $error = int(
                         ( 1 - ( ( $targetWeight - $delta ) / $targetWeight ) )
                         * 100 );
